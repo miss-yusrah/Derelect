@@ -3,7 +3,6 @@ import {
   createStation,
   STANDARD_SALVAGE,
   CAMPAIGN_TURNS,
-  CREDIT,
   type ActionKind,
   type Offer,
   type StationState,
@@ -560,12 +559,17 @@ export function App(): JSX.Element {
 
   if (!snapshot || !previewState) {
     return (
-      <div className="boot" role="status">
-        {isTestnet ? 'READING STATION FROM TESTNET…' : 'SPOOLING UP…'}
+      <div className="boot" role="status" style={{ display: 'grid', gap: 12, justifyItems: 'center' }}>
+        <span>{isTestnet ? 'READING STATION FROM TESTNET…' : 'SPOOLING UP…'}</span>
         {chainError ? (
-          <div style={{ color: 'var(--red)', fontSize: 13, marginTop: 8, maxWidth: 460, textAlign: 'center' }}>
+          <span style={{ color: 'var(--red)', fontSize: 13, maxWidth: 460, textAlign: 'center' }}>
             {chainError}
-          </div>
+          </span>
+        ) : null}
+        {isTestnet && chainError ? (
+          <button className="btn" onClick={() => setMode('practice')}>
+            Back to practice
+          </button>
         ) : null}
       </div>
     )

@@ -8,9 +8,7 @@ import {
   type StationState,
   type HistoryEvent,
 } from '@derelict/game-model'
-import {
-  PRACTICE_BUYER,
-} from '../config'
+import { PRACTICE_BUYER, PRACTICE_OWNER } from '../config'
 
 /**
  * Practice mode persistence and transitions. Everything is local: the model
@@ -97,8 +95,19 @@ export class PracticeActionFailed extends Error {
   }
 }
 
-/** Apply one gameplay action, or throw with the exact model error text. */
+/** Practice-mode captain authority, mirroring the contract's assert_captain. */
+export const CAPTAIN_ONLY_ERROR =
+  'Only the station captain (NFT owner) may command this station'
+
+function assertCaptain(state: StationState): void {
+  if (state.owner !== PRACTICE_OWNER) {
+    throw new PracticeActionFailed(CAPTAIN_ONLY_ERROR)
+  }
+}
+
+/** Apply one gameplay action, or throw with the exact contract error text. */
 export function practiceAct(state: StationState, action: ActionKind): StationState {
+  assertCaptain(state)
   try {
     return applyAction(state, action, practiceBlockHeight(state))
   } catch (error) {
@@ -107,10 +116,12 @@ export function practiceAct(state: StationState, action: ActionKind): StationSta
 }
 
 export function practiceList(state: StationState, priceYocto: bigint): StationState {
+  assertCaptain(state)
   return withFreshHistory(listForSale(state, priceYocto))
 }
 
 export function practiceUnlist(state: StationState): StationState {
+  assertCaptain(state)
   return withFreshHistory(unlist(state))
 }
 

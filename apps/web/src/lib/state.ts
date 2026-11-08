@@ -9,7 +9,7 @@ import type { ChainBuckets, ChainLedgerEvent, ChainOffer, ChainState } from './c
 import { creditsOf } from './contract'
 
 /**
- * aithful unified game snapshot shared by practice mode (from the TS model)
+ * Faithful unified game snapshot shared by practice mode (from the TS model)
  * and testnet mode (from contract views). bigint money is yoctoNEAR.
  */
 
