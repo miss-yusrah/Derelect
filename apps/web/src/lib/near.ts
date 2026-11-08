@@ -76,18 +76,17 @@ async function buildRuntime(): Promise<NearRuntime> {
 
   let connector: NearConnector | null = null
   try {
-      const nc = await import('@hot-labs/near-connect')
-      connector = new nc.NearConnector({
-        network: 'testnet',
-        features: {
-          signAndSendTransaction: true,
-          signAndSendTransactions: true,
-          signInWithoutAddKey: true,
-        },
-      })
-    } catch {
-      connector = null
-    }
+    const nc = await import('@hot-labs/near-connect')
+    connector = new nc.NearConnector({
+      network: 'testnet',
+      features: {
+        signAndSendTransaction: true,
+        signAndSendTransactions: true,
+        signInWithoutAddKey: true,
+      },
+    })
+  } catch {
+    connector = null
   }
 
   const connected = new Map<string, DerelictWallet>()
