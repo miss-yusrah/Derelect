@@ -53,9 +53,6 @@ export interface NearRuntime {
 
 let cached: NearRuntime | null | undefined
 
-const declaredNearApi: boolean =
-  typeof __DERELICT_NEAR_API__ === 'boolean' ? __DERELICT_NEAR_API__ : true
-
 /** Load and memoize the runtime. Resolves null only when RPC also fails. */
 export async function loadNearRuntime(): Promise<NearRuntime | null> {
   if (cached === undefined) {
@@ -65,14 +62,10 @@ export async function loadNearRuntime(): Promise<NearRuntime | null> {
 }
 
 async function buildRuntime(): Promise<NearRuntime> {
-  let view = makeFetchView()
-  if (declaredNearApi) {
-    try {
-      view = makeNearApiProviderView(await import('near-api-js'))
-    } catch {
-      view = makeFetchView()
-    }
-  }
+  // Views: our own failover fetch view is primary — it is fully CORS-verified
+  // in-browser, has zero deps, and avoids near-api-js v6 provider quirks.
+  // The library remains available for wallet flows only.
+  const view = makeFetchView()
 
   let connector: NearConnector | null = null
   try {
@@ -182,11 +175,16 @@ function makeNearApiProviderView(naj: typeof import('near-api-js')): NearRuntime
     RPC_ENDPOINTS.map((url) => new naj.JsonRpcProvider({ url })),
   )
   return async <T,>(contractId: string, methodName: string, args: Record<string, unknown>) => {
-    const result = await provider.callFunction<T>(contractId, methodName, args)
-    if (result === undefined) {
-      throw new Error(`RPC returned nothing for ${methodName} on ${contractId}`)
+    try {
+      const result = await provider.callFunction<T>(contractId, methodName, args)
+      if (result === undefined) {
+        throw new Error(`RPC returned nothing for ${methodName} on ${contractId}`)
+      }
+      return result
+    } catch (e) {
+      console.error('[derelict:rpc/provider]', methodName, e)
+      throw e
     }
-    return result
   }
 }
 
@@ -210,22 +208,49 @@ function makeFetchView(): NearRuntime['view'] {
         const payload = json.result ?? json
         if ((payload as { error?: { message?: string } }).error) {
           const fail = (payload as {
-            error: { message?: string; cause?: { message?: string } }
+            error: { message?: string; cause?: { message?: string }; data?: unknown; code?: unknown }
           }).error
-          throw new Error((fail.cause?.message ?? fail.message) || 'RPC error')
+          try {
+            const w = window as unknown as { __derelictRpcErrors?: string[] }
+            w.__derelictRpcErrors = w.__derelictRpcErrors ?? []
+            w.__derelictRpcErrors.push(`url=${url} payload=${JSON.stringify(payload).slice(0, 300)}`)
+          } catch {
+            /* probe only */
+          }
+          throw new Error((fail.cause?.message ?? fail.message) || `RPC error (${JSON.stringify(fail).slice(0, 120)})`)
         }
         index = (index + attempt) % RPC_ENDPOINTS.length
         return payload as T
       } catch (error) {
         lastError = error
+        console.warn('[derelict:rpc] endpoint failed', attempt, error)
+        try {
+          const w = window as unknown as { __derelictRpcErrors?: string[] }
+          w.__derelictRpcErrors = w.__derelictRpcErrors ?? []
+          const detail =
+            error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+          w.__derelictRpcErrors.push(`endpoint=${url} ${detail}`)
+        } catch {
+          /* ignore probe artifacts */
+        }
       }
     }
     throw lastError instanceof Error ? lastError : new Error(String(lastError))
   }
   return async <T,>(contractId: string, methodName: string, args: Record<string, unknown>) => {
-    const raw = await rpcCall<{
-      result?: { result: number[]; error?: { message?: string } }
-      error?: { message?: string; cause?: { message?: string } }
+    try {
+      return await doRpc(contractId, methodName, args)
+    } catch (e) {
+      console.error('[derelict:rpc]', methodName, e)
+      throw e
+    }
+  }
+  async function doRpc<T>(contractId: string, methodName: string, args: Record<string, unknown>): Promise<T> {
+    // rpcCall returns the query result object directly:
+    //   { block_hash, block_height, logs, result: number[] (UTF-8 bytes) }
+    const callResult = await rpcCall<{
+      result?: number[]
+      error?: { message?: string }
     }>({
       method: 'query',
       params: {
@@ -236,9 +261,18 @@ function makeFetchView(): NearRuntime['view'] {
         args_base64: btoa(JSON.stringify(args)),
       },
     })
-    if (raw.error) throw new Error(raw.error.message ?? 'RPC query error')
-    const bytes = raw.result?.result
-    if (!bytes) throw new Error(`RPC returned nothing for ${methodName} on ${contractId}`)
+    if (callResult.error) throw new Error(callResult.error.message ?? 'RPC query error')
+    const bytes = callResult.result
+    if (!bytes || bytes.length === 0) {
+      try {
+        const w = window as unknown as { __derelictRpcErrors?: string[] }
+        w.__derelictRpcErrors = w.__derelictRpcErrors ?? []
+        w.__derelictRpcErrors.push(`raw payload for ${methodName}: ${JSON.stringify(callResult).slice(0, 240)}`)
+      } catch {
+        /* probe only */
+      }
+      throw new Error(`RPC returned nothing for ${methodName} on ${contractId}`)
+    }
     const text = new Uint8Array(bytes).reduce(
       (acc, byte) => acc + String.fromCharCode(byte),
       '',

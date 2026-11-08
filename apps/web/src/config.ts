@@ -9,7 +9,7 @@ import rpcConfig from '../config.json'
  *   3. the built-in testnet fallback constant.
  */
 
-export const DEFAULT_STATION_ACCOUNT = 'station.derelict.testnet'
+export const DEFAULT_STATION_ACCOUNT = 'isa01.derelict-factory.testnet'
 
 const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {}
 

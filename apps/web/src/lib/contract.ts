@@ -181,7 +181,10 @@ export async function getStationContract(
     viewState: () => runtime.view<ChainState>(stationAccount, 'get_state', {}),
     viewOffers: () => runtime.view<ChainOffer[]>(stationAccount, 'get_offers', {}),
     viewLedger: (fromIndex, limit) =>
-      runtime.view<ChainLedgerEvent[]>(stationAccount, 'get_ledger', { from_index: fromIndex ?? 0, limit: limit ?? 300 }),
+      runtime.view<ChainLedgerEvent[]>(stationAccount, 'get_ledger', {
+        from_index: String(fromIndex ?? 0),
+        limit: limit ?? 50,
+      }),
     viewBuckets: () => runtime.view<ChainBuckets>(stationAccount, 'get_buckets', {}),
     act: async (action, expectedRevision) => {
       if (!wallet) throw new Error('Connect a wallet to command this station')

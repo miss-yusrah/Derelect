@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>rpc probe</title></head>
+  <body>
+    <pre id="out">pending</pre>
+    <script type="module">
+      const out = document.getElementById('out')
+      const lines = []
+
+      function note(name, ok, info) {
+        lines.push(`${ok ? 'OK ' : 'FAIL'} ${name}: ${info}`)
+      }
+
+      // 1. Raw fetch to RPC (the fetch-view fallback path).
+      try {
+        const res = await fetch('https://rpc.testnet.fastnear.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: Date.now(),
+            method: 'query',
+            params: {
+              request_type: 'call_function',
+              finality: 'final',
+              account_id: 'isa01.derelict-factory.testnet',
+              method_name: 'get_state',
+              args_base64: btoa(JSON.stringify({})),
+            },
+          }),
+        })
+        const j = await res.json()
+        const bytes = j && j.result && j.result.result
+        const text = bytes ? new TextDecoder().decode(new Uint8Array(bytes)) : '(none)'
+        note('raw-fetch', !!bytes, `status=${res.status} result=${text.slice(0, 120)}`)
+      } catch (e) {
+        note('raw-fetch', false, String(e) + ' :: ' + JSON.stringify(e?.cause ?? null))
+      }
+
+      // 2. near-api-js provider path.
+      try {
+        const naj = await import('near-api-js')
+        const provider = new naj.providers.FailoverRpcProvider([
+          new naj.providers.JsonRpcProvider({ url: 'https://rpc.testnet.fastnear.com' }),
+        ])
+        const r = await provider.callFunction(
+          'isa01.derelict-factory.testnet',
+          'get_state',
+          {},
+        )
+        note('near-api-js', true, JSON.stringify(r).slice(0, 120))
+      } catch (e) {
+        note('near-api-js', false, String(e) + ' :: ' + JSON.stringify(e?.cause ?? null))
+      }
+
+      out.textContent = lines.join('\n')
+    </script>
+  </body>
+</html>

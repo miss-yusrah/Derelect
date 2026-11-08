@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>refresh probe</title></head>
+  <body>
+    <pre id="out">idle</pre>
+    <script type="module">
+      const out = document.getElementById('out')
+      const lines = []
+      function flush() { out.textContent = lines.join('\n') }
+      flush()
+      try {
+        const mod = await import('/src/lib/near.ts')
+        const runtime = await mod.loadNearRuntime()
+        lines.push('runtime ok')
+        flush()
+        try {
+          const st = await runtime.view('isa01.derelict-factory.testnet', 'get_ledger', { from_index: 0, limit: 50 })
+          lines.push('OK get_ledger: ' + JSON.stringify(st.slice(0, 1)))
+        } catch (e) {
+          const w = window
+          lines.push('FAIL get_ledger: ' + String(e))
+          lines.push('rpcErr: ' + JSON.stringify(w.__derelictRpcErrors ?? []))
+        }
+        flush()
+      } catch (e) {
+        lines.push('import fail: ' + String(e))
+        flush()
+      }
+    </script>
+  </body>
+</html>

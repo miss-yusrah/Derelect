@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>snapshot probe</title></head>
+  <body>
+    <pre id="out">idle</pre>
+    <script type="module">
+      const out = document.getElementById('out')
+      const lines = []
+      function flush() { out.textContent = lines.join('\n') }
+      flush()
+      try {
+        const mod = await import('/src/lib/near.ts')
+        const runtime = await mod.loadNearRuntime()
+        lines.push('runtime ok')
+        flush()
+        for (const [name, method, args] of [
+          ['get_state', 'get_state', {}],
+          ['get_offers', 'get_offers', {}],
+          ['get_ledger', 'get_ledger', { from_index: 0, limit: 300 }],
+          ['get_buckets', 'get_buckets', {}],
+        ]) {
+          try {
+            const r = await runtime.view('isa01.derelict-factory.testnet', method, args)
+            const size = typeof r === 'object' && r && 'length' in r ? r.length : Object.keys(r ?? {}).length
+            lines.push(`OK  ${name}: props=${size}`)
+          } catch (e) {
+            const w = window
+            lines.push(`FAIL ${name}: ${String(e)}`)
+            lines.push('rpcErr: ' + JSON.stringify(w.__derelictRpcErrors ?? []))
+          }
+          flush()
+        }
+      } catch (e) {
+        lines.push('import fail: ' + String(e))
+        flush()
+      }
+    </script>
+  </body>
+</html>

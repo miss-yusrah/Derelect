@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>runtime probe</title></head>
+  <body>
+    <pre id="out">pending</pre>
+    <script type="module">
+      const out = document.getElementById('out')
+      const lines = []
+
+      try {
+        const mod = await import('/src/lib/near.ts')
+        const runtime = await mod.loadNearRuntime()
+        if (!runtime) {
+          lines.push('FAIL runtime: loadNearRuntime() returned null')
+        } else {
+          lines.push(`OK  runtime: walletLibraryAvailable=${runtime.walletLibraryAvailable}`)
+          try {
+            const state = await runtime.view(
+              'isa01.derelict-factory.testnet',
+              'get_state',
+              {},
+            )
+            lines.push(
+              'OK  view(get_state): ' +
+                JSON.stringify({
+                  owner: state.owner,
+                  turn: state.turn,
+                  operating: state.operating,
+                }),
+            )
+          } catch (e) {
+            lines.push('FAIL view(get_state): ' + String(e))
+            const w = window as unknown as { __derelictRpcErrors?: string[] }
+            lines.push('rpcErrors: ' + JSON.stringify(w.__derelictRpcErrors ?? []))
+          }
+          try {
+            const offers = await runtime.view(
+              'isa01.derelict-factory.testnet',
+              'get_offers',
+              {},
+            )
+            lines.push(`OK  view(get_offers): count=${offers.length}`)
+          } catch (e) {
+            lines.push('FAIL view(get_offers): ' + String(e))
+          }
+        }
+      } catch (e) {
+        lines.push('FAIL import: ' + String(e))
+      }
+
+      out.textContent = lines.join('\n')
+    </script>
+  </body>
+</html>

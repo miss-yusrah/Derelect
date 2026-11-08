@@ -69,7 +69,14 @@ function creditsToYocto(credits: number): bigint {
 }
 
 export function App(): JSX.Element {
-  const [mode, setMode] = useState<Mode>('practice')
+  // Jump links for judges/recordings: ?mode=testnet&station=<account>
+  const initialParams = new URLSearchParams(
+    typeof window !== 'undefined' ? window.location.search : '',
+  )
+  const CHAIN_STATION = initialParams.get('station') || STATION_ACCOUNT
+  const [mode, setMode] = useState<Mode>(
+    initialParams.get('mode') === 'testnet' ? 'testnet' : 'practice',
+  )
 
   // Practice run: created synchronously, so a judge is playing immediately.
   const [practice, setPractice] = useState<StationState>(() => loadPractice() ?? freshPractice())
@@ -137,11 +144,11 @@ export function App(): JSX.Element {
       const runtime = runtimeRef.current
       if (!runtime) return false
       try {
-        const contract = await getStationContract(STATION_ACCOUNT, runtime)
+        const contract = await getStationContract(CHAIN_STATION, runtime)
         const [state, offers, ledger, buckets] = await Promise.all([
           contract.viewState(),
           contract.viewOffers(),
-          contract.viewLedger(undefined, 400),
+          contract.viewLedger(undefined, 50),
           contract.viewBuckets(),
         ])
         setChainState({
@@ -193,7 +200,7 @@ export function App(): JSX.Element {
         const runtime = runtimeRef.current
         if (!runtime) break
         try {
-          const contract = await getStationContract(STATION_ACCOUNT, runtime)
+          const contract = await getStationContract(CHAIN_STATION, runtime)
           const state = await contract.viewState()
           if (state.revision !== previousRevision) {
             await refreshChain(true)
@@ -253,7 +260,7 @@ export function App(): JSX.Element {
       setMessage(null)
       let previousRevision = 0
       try {
-        const contract = await getStationContract(STATION_ACCOUNT, runtime)
+        const contract = await getStationContract(CHAIN_STATION, runtime)
         const state = await contract.viewState()
         previousRevision = state.revision
         if (state.complete) throw new Error('Campaign is complete')
@@ -309,7 +316,7 @@ export function App(): JSX.Element {
         }
         setTxPending('list')
         try {
-          const contract = await getStationContract(STATION_ACCOUNT, runtime)
+          const contract = await getStationContract(CHAIN_STATION, runtime)
           await contract.listForSale(priceYocto)
           const settled = await confirmSettled(Infinity) // listing bumps revision
           if (settled) setBanner({ tone: 'ok', text: 'Listing confirmed on chain.' })
@@ -339,7 +346,7 @@ export function App(): JSX.Element {
       }
       setTxPending('unlist')
       try {
-        const contract = await getStationContract(STATION_ACCOUNT, runtime)
+        const contract = await getStationContract(CHAIN_STATION, runtime)
         await contract.unlist()
         await confirmSettled(Infinity)
         setBanner({ tone: 'ok', text: 'Listing removed on chain.' })
@@ -377,7 +384,7 @@ export function App(): JSX.Element {
       }
       setTxPending('purchase')
       try {
-        const contract = await getStationContract(STATION_ACCOUNT, runtime)
+        const contract = await getStationContract(CHAIN_STATION, runtime)
         const state = await contract.viewState()
         if (state.listing === null) throw new Error('No active listing')
         if (state.owner === wallet.accountId) throw new Error('Buyer is already the captain')

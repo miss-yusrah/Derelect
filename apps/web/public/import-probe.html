@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>import probe</title></head>
+  <body>
+    <pre id="out">topic: load state</pre>
+    <script type="module">
+      const lines = []
+      lines.push('start')
+      try {
+        const mod = await import('/src/lib/near.ts')
+        lines.push('import ok, surface=' + Object.keys(mod).join(','))
+      } catch (e) {
+        lines.push('import fail: ' + String(e))
+      }
+      document.getElementById('out').textContent = lines.join('\n')
+    </script>
+  </body>
+</html>
