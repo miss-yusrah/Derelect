@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { IconCopy, IconHazard } from './icons'
+import { IconCheck, IconCopy, IconHazard } from './icons'
 import { Chip } from './primitives'
 import { CAMPAIGN_TURNS } from '@derelict/game-model'
 
@@ -52,6 +52,7 @@ export function Header({
         <button
           className="hdr__station-id"
           title={`Copy ${stationAccount} to clipboard`}
+          aria-label={`Copy station account ${stationAccount}`}
           onClick={async () => {
             if (await copyText(stationAccount)) {
               setCopied(true)
@@ -60,7 +61,11 @@ export function Header({
           }}
         >
           <span>{stationAccount}</span>
-          <span style={{ color: 'var(--ink-3)' }}>{copied ? 'copied' : '⧉'}</span>
+          {copied ? (
+            <IconCheck size={13} style={{ color: 'var(--green)' }} />
+          ) : (
+            <IconCopy size={13} style={{ color: 'var(--ink-3)' }} />
+          )}
         </button>
       </div>
       <div className="hdr__spacer" />

@@ -1,41 +1,66 @@
 #!/usr/bin/env bash
-# Fresh judging run: create a station, seed the six standard + six heavy
-# visitor offers (0.078 NEAR total from the demo visitor account), and print
-# the accounts and walkthrough steps for the evidence drawer.
-# Usage: scripts/fresh-run-station.sh <name> [captain] [visitor] [supplier]
+# Deploy the factory + a fresh station to NEAR testnet, then seed demo offers.
+#
+# Factories/stations and the judge's guide: docs/judging.md.
+#
+# Prerequisites:
+#   cargo install near-cli-rs
+#   Files (gitignored, neardev/):
+#     neardev/<account>.key.txt  — output of `near account create-account ...`
+#                                  (contains SECRET KEYPAIR)
+# Env:
+#   FACTORY=derelict-factory.testnet (optional)
+#   CAPTAIN, VISITOR, BUYER, SUPPLIER (optional)
+#   STATION (default latest timestamped name, e.g. isa02)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-NAME=${1:?station name, e.g. isa-01}
-FACTORY_ACCOUNT=${FACTORY_ACCOUNT:?env FACTORY_ACCOUNT}
-FACTORY_KEY_ACCOUNT=${PLAYER_ACCOUNT:?env PLAYER_ACCOUNT (factory operator/captain)}
-VISITOR=${2:-${VISITOR_ACCOUNT:-visitor.derelict.testnet}}
-CAPTAIN=${3:-${PLAYER_ACCOUNT}}
-SUPPLIER=${4:-${SUPPLIER_ACCOUNT:-supplier.derelict.testnet}}
+FACTORY=${FACTORY:-derelict-factory.testnet}
+CAPTAIN=${CAPTAIN:-captain.$FACTORY}
+VISITOR=${VISITOR:-visitor.$FACTORY}
+SUPPLIER=${SUPPLIER:-supplier.$FACTORY}
+STATION=${STATION:-isa02}
+cap_key() { grep -o 'SECRET KEYPAIR: ed25519:[A-Za-z0-9]*' "neardev/$1.key.txt" | awk '{print $3}' | sed 's/^ed25519://'; }
+cap () { near contract call-function as-transaction "$@" | grep -iE "Transaction ID|error |Smart contract" | head -3; }
 
-STATION="${NAME}.${FACTORY_ACCOUNT}"
-echo "== Creating station ${STATION} =="
-near contract call-function as-transaction "${FACTORY_ACCOUNT}" create_station \
-  json-args "{\"name\": \"${NAME}\", \"captain\": \"${CAPTAIN}\", \"scenario\": \"standard-salvage\"}" \
-  prepaid-gas '100.0 Tgas' attached-deposit '6.021 NEAR' \
-  sign-as "${PLAYER_ACCOUNT}" network-config testnet sign-with-key-pair --sign-with-access-key-file ./neardev/${PLAYER_ACCOUNT}.json send
+bash scripts/build.sh
 
-echo "== Funding visitor offers (6 standard x 0.005 NEAR + 6 heavy x 0.008 NEAR) =="
+echo "== Deploy factory wasm (no init) =="
+near contract deploy "$FACTORY" use-file target/wasm/derelict_factory.wasm without-init-call \
+  network-config testnet sign-with-plaintext-private-key "$(cap "$FACTORY")" send | grep -iE "Transaction ID"
+
+echo "== Init factory with the station wasm embedded =="
+python3 - <<-EOF
+import json
+args = {"wasm_code": list(open('target/wasm/derelict_station.wasm','rb').read())}
+open('/tmp/opencode/derelict-new-args.json','w').write(json.dumps(args))
+EOF
+cp /tmp/opencode/derelict-new-args.json /tmp/opencode/new-args.json
+cap "$FACTORY" new file-args /tmp/opencode/new-args.json prepaid-gas "300 Tgas" \
+  attached-deposit "0 NEAR" sign-as "$FACTORY" network-config testnet \
+  sign-with-plaintext-private-key "$(cap "$FACTORY")" send
+
+echo "== Create station $STATION.$FACTORY (captain signs; attach storage + operating 6.021 N) =="
+cap "$FACTORY" create_station \
+  json-args "{\"name\": \"$STATION\", \"captain\": \"$CAPTAIN\", \"scenario\": \"standard-salvage\"}" \
+  prepaid-gas "300 Tgas" attached-deposit "6.021 NEAR" sign-as "$CAPTAIN" \
+  network-config testnet sign-with-plaintext-private-key "$(cap "$CAPTAIN")" send
+
+echo "== Seed 6 standard + 6 heavy offers from the visitor =="
 for i in 1 2 3 4 5 6; do
-  near contract call-function as-transaction "${STATION}" fund_offer \
-    json-args '{"kind":"Standard"}' prepaid-gas '30.0 Tgas' attached-deposit '0.005 NEAR' \
-    sign-as "${VISITOR}" network-config testnet send | tail -1
-  near contract call-function as-transaction "${STATION}" fund_offer \
-    json-args '{"kind":"Heavy"}' prepaid-gas '30.0 Tgas' attached-deposit '0.008 NEAR' \
-    sign-as "${VISITOR}" network-config testnet send | tail -1
+  cap "$STATION.$FACTORY" fund_offer json-args '{"kind": "standard"}' prepaid-gas "60 Tgas" \
+    attached-deposit "0.005 NEAR" sign-as "$VISITOR" network-config testnet \
+    sign-with-plaintext-private-key "$(cap "$VISITOR")" send
+  cap "$STATION.$FACTORY" fund_offer json-args '{"kind": "heavy"}' prepaid-gas "60 Tgas" \
+    attached-deposit "0.008 NEAR" sign-as "$VISITOR" network-config testnet \
+    sign-with-plaintext-private-key "$(cap "$VISITOR")" send
 done
 
-echo "== Verify: no access keys on the station account (contract is sole controller) =="
-near network view-access-keys "${STATION}" network-config testnet || \
-  near keys "${STATION}" || true
+echo "== Verify: station state + zero access keys =="
+near contract call-function as-read-only "$STATION.$FACTORY" get_state json-args '{}' \
+  network-config testnet now | tail -30
+curl -s -X POST https://rpc.testnet.near.org -H "Content-Type: application/json" \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":\"x\",\"method\":\"query\",\"params\":{\"request_type\":\"view_access_key_list\",\"finality\":\"final\",\"account_id\":\"$STATION.$FACTORY\"}}" \
+  | grep '"keys"' || true
 
-STATE=$(near contract call-function as-read-only "${STATION}" get_state json-args '{}' prepaid-gas '10 Tgas' network-config testnet at-run 2>/dev/null || true)
-echo "STATION=${STATION}"
-echo "STATE=${STATE}"
-echo
-echo "Judge walkthrough (see docs/judging.md): turns 1-3, sale to a second account, old captain rejection, turn 4 refuel + repair effect, supplier claim, turns 5-6 heavy dockings."
+echo "OK: $STATION.$FACTORY ready. Judge walkthrough: docs/judging.md"
