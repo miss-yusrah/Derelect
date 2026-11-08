@@ -49,6 +49,7 @@ pub enum StorageKey {
 )]
 #[borsh(crate = "near_sdk::borsh")]
 #[serde(crate = "near_sdk::serde")]
+#[serde(rename_all = "lowercase")]
 pub enum OfferKind {
     Standard,
     Heavy,
@@ -134,6 +135,7 @@ pub struct PendingPayout {
 )]
 #[borsh(crate = "near_sdk::borsh")]
 #[serde(crate = "near_sdk::serde")]
+#[serde(rename_all = "camelCase", tag = "kind")]
 pub enum GameAction {
     StandardDocking,
     HeavyDocking,

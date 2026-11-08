@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@derelict/game-model": ["../../packages/game-model/src/index.ts"],
+      "@derelict/game-model/*": ["../../packages/game-model/src/*"],
+      "near-api-js": ["./src/types/vendor-near-api-js.d.ts"],
+      "@hot-labs/near-connect": ["./src/types/vendor-near-connect.d.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts", "config.json"]
+}

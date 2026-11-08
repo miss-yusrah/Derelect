@@ -1,0 +1,9 @@
+{
+  "network": "testnet",
+  "stationAccount": null,
+  "rpcEndpoints": [
+    "https://rpc.testnet.fastnear.com",
+    "https://rpc.testnet.pagoda.co",
+    "https://near-rpc.publicnode.com"
+  ]
+}

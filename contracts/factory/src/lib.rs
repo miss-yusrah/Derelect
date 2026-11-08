@@ -110,7 +110,10 @@ impl Factory {
         .into_bytes();
 
         // Batch on this factory account so it can create its own subaccount.
-        let batch = env::promise_batch_create(&factory);
+        // The batch receiver is the new subaccount; this factory (the batch
+        // creator) is its parent, which authorizes account creation without
+        // any keys on the child.
+        let batch = env::promise_batch_create(&station_account);
         // The batch account (this factory) is the parent of the new subaccount.
         env::promise_batch_action_create_account(batch);
         env::promise_batch_action_transfer(batch, NearToken::from_yoctonear(STATION_FUNDING));
@@ -125,7 +128,7 @@ impl Factory {
 
         self.stations.push(station_account.clone());
         self.info.insert(
-            name,
+            name.clone(),
             StationInfo {
                 station_account,
                 captain,
@@ -133,6 +136,7 @@ impl Factory {
                 created_block: env::block_height(),
             },
         );
+        assert!(self.info.get(&name).is_some(), "info entry must be readable right after insert");
     }
 
     fn filter_registered(&self, account: &AccountId) -> Option<AccountId> {
@@ -155,9 +159,10 @@ impl Factory {
             .map(|acc| {
                 let name = acc
                     .to_string()
-                    .rsplit_once('.')
+                    .split_once('.')
                     .map(|(n, _)| n.to_string())
                     .unwrap_or_default();
+                println!("DBG factory: station {acc} -> name {name:?}; info contains: {}", self.info.get(&name).is_some());
                 self.info.get(&name).cloned()
             })
             .collect::<Vec<Option<StationInfo>>>()
@@ -174,4 +179,33 @@ impl Factory {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fake_wasm() -> Vec<u8> {
+        vec![0u8; 16]
+    }
+
+    #[test]
+    fn create_station_pushes_index() {
+        let mut b = near_sdk::test_utils::VMContextBuilder::new();
+        b.current_account_id("factory.testnet".parse().unwrap())
+            .predecessor_account_id("player.testnet".parse().unwrap())
+            .attached_deposit(NearToken::from_yoctonear(STATION_FUNDING));
+        near_sdk::testing_env!(b.build());
+
+        let mut f = Factory::new(fake_wasm());
+        let captain: AccountId = "captain.testnet".parse().unwrap();
+        f.create_station("isa01".to_string(), captain.clone(), "standard".to_string());
+        println!("stations = {:?}", f.stations.iter().collect::<Vec<_>>());
+        assert_eq!(f.stations.len(), 1);
+        let listed = f.get_stations();
+        println!("listed = {:?}", listed);
+        assert_eq!(listed.len(), 1);
+        let expected: AccountId = "isa01.factory.testnet".parse().unwrap();
+        assert_eq!(listed[0].station_account, expected);
+    }
 }

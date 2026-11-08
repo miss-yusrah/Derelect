@@ -9,5 +9,11 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "secp256k1"
+    ]
   }
 }

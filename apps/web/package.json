@@ -1,0 +1,32 @@
+{
+  "name": "derelict-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "DERELICT station bridge web app — practice mode plus NEAR testnet wallet mode. Stations are NFTs that own their own money.",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@derelict/game-model": "workspace:*",
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "optionalDependencies": {
+    "@hot-labs/near-connect": "^0.12.0",
+    "near-api-js": "^6.5.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.9.0",
+    "vite": "^5.4.11"
+  }
+}
