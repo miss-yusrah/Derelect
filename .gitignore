@@ -1,0 +1,26 @@
+# Rust / wasm
+target/
+**/target/
+*.wasm
+!**/*.wasm.md
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+
+# Vite
+.vite/
+
+# Env & keys
+.env
+.env.*
+*.testnet.json
+neardev/
+*.credentials.json
+
+# Misc
+.DS_Store
+coverage/
+*.log

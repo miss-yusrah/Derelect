@@ -1,0 +1,20 @@
+{
+  "tool": "Built-in image_gen.imagegen",
+  "purpose": "Visual direction concept for DERELICT; not implemented software",
+  "output": "derelict-station-concept.png",
+  "edit_source": "derelict-station-concept-original.png",
+  "final_prompt": "Use case: text-localization. Edit target: the attached DERELICT desktop game interface concept. Preserve the illustration, all layout, colors, typography, borders and other text exactly. Make ONLY these small content corrections to align with the finalized proposed economy: change the left AVAILABLE value from 13 Cr to 14 Cr; change mission log docking payment from +7 Cr to +8 Cr. At bottom mission timeline keep numbered circles 1 through 6 with circle 2 current, but remove the words DOCK, REPAIR, REFUEL, SALVAGE, PROCESS, EXIT beneath the circles: future turns are player choices, so show only numbers. Keep the caption 'Visual concept'. Do not redesign or move anything else.",
+  "base_direction": {
+    "palette": [
+      "#101416",
+      "#191F21",
+      "#E9E5DC",
+      "#EE7948",
+      "#A7C0AA",
+      "#C86B59"
+    ],
+    "layout": "Desktop station-management bridge, status left, layered 2D station central, decisions right, mission log and turns below",
+    "typography": "Condensed industrial display, readable sans controls, monospace numeric resources"
+  },
+  "concept_state": "Turn 2 after heavy docking and repair purchase: operating 14 Cr, fuel 2, hull 1, repair reserve 4 Cr; uses the finalized 8 Cr heavy docking fee."
+}
