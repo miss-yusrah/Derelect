@@ -1,0 +1,13 @@
+{
+  "name": "derelict-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "DERELICT — orbital salvage strategy game on NEAR. Stations are NFTs that are real accounts owning their own money.",
+  "scripts": {
+    "build:contracts": "bash scripts/build.sh",
+    "model:test": "pnpm --filter @derelict/game-model test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
