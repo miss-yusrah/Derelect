@@ -117,27 +117,27 @@ export interface ChainBuckets {
  * unit variants serialize as bare strings, payloads as {Variant: {...}}.
  */
 export type ContractGameAction =
-  | 'StandardDocking'
-  | 'HeavyDocking'
-  | { Refuel: { units: number } }
-  | { CommissionRepair: { supplier: string } }
-  | 'UpgradeDock'
-  | 'Wait'
+  | { kind: 'standardDocking' }
+  | { kind: 'heavyDocking' }
+  | { kind: 'refuel'; units: number }
+  | { kind: 'commissionRepair'; supplier: string }
+  | { kind: 'upgradeDock' }
+  | { kind: 'wait' }
 
 export function toContractAction(action: ActionKind): ContractGameAction {
   switch (action.kind) {
     case 'standardDocking':
-      return 'StandardDocking'
+      return { kind: 'standardDocking' }
     case 'heavyDocking':
-      return 'HeavyDocking'
+      return { kind: 'heavyDocking' }
     case 'upgradeDock':
-      return 'UpgradeDock'
+      return { kind: 'upgradeDock' }
     case 'wait':
-      return 'Wait'
+      return { kind: 'wait' }
     case 'refuel':
-      return { Refuel: { units: action.units } }
+      return { kind: 'refuel', units: action.units }
     case 'commissionRepair':
-      return { CommissionRepair: { supplier: action.supplier } }
+      return { kind: 'commissionRepair', supplier: action.supplier }
   }
 }
 
@@ -232,7 +232,7 @@ export async function getStationContract(
       return wrappedTx(wallet.signAndSend({
         receiverId: stationAccount,
         methodName: 'fund_offer',
-        args: { kind: kind === 'standard' ? 'Standard' : 'Heavy' },
+        args: { kind: kind === 'standard' ? 'standard' : 'heavy' },
         gas: GAS_30_TGAS,
         deposit: escrow,
       }))
