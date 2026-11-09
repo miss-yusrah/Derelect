@@ -44,6 +44,7 @@ if (!probe('@hot-labs/near-connect')) {
 
 export default defineConfig((): UserConfig => ({
   plugins: [react()],
+  base: process.env.VITE_BASE || '/',
   resolve: { alias: resolveEntries },
   define: {
     __DERELICT_NEAR_API__: JSON.stringify(probe('near-api-js')),
