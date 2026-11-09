@@ -1747,3 +1747,86 @@ button {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ================= Station canvas (Phase 2 art) ================= */
+.station-canvas {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+  background: #0b0f10;
+}
+
+.station-canvas-artwrap {
+  position: relative;
+  aspect-ratio: 900 / 688;
+  height: min(100%, calc((100vw - 560px) * 688 / 900));
+  max-width: 100%;
+}
+
+.station-canvas-img,
+.station-canvas-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.station-canvas-img {
+  object-fit: contain;
+}
+
+/* module callouts */
+.modspot { outline: none; }
+.modspot-hit { fill: transparent; transition: fill 160ms ease; }
+.modspot:hover .modspot-hit,
+.modspot:focus-visible .modspot-hit { fill: rgba(233, 229, 220, 0.05); }
+.modspot:focus-visible .modspot-hit { stroke: #EE7948; stroke-width: 1.4; }
+
+.modspot-name {
+  font: 600 13.5px "IBM Plex Sans", sans-serif;
+  fill: #E9E5DC;
+  letter-spacing: 0.14em;
+}
+.modspot-state {
+  font: 600 13.5px "IBM Plex Sans", sans-serif;
+  letter-spacing: 0.1em;
+}
+
+.modspot-underline,
+.modspot-leader {
+  stroke: rgba(233, 229, 220, 0.6);
+  stroke-width: 1.2;
+  fill: none;
+  transition: stroke 160ms ease, opacity 160ms ease;
+}
+.modspot:hover .modspot-leader,
+.modspot:hover .modspot-underline { stroke: rgba(233, 229, 220, 0.95); }
+
+.modspot-dot { fill: #E9E5DC; }
+.modspot-dot.queued { fill: #D9B96A; }
+
+.station-ship { animation: ship-dock-in 220ms ease-out; transform-box: fill-box; transform-origin: center; }
+@keyframes ship-dock-in {
+  from { opacity: 0; transform: translate(70px, -34px) rotate(-16deg); }
+  to { opacity: 1; transform: translate(0, 0) rotate(-16deg); }
+}
+
+.station-canvas-registries {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  color: #67727a;
+  font: 500 10.5px "IBM Plex Mono", monospace;
+  letter-spacing: 0.08em;
+  user-select: none;
+}
+
+.station-canvas-banner { position: absolute; }
+/* quiet behavior behind reduced motion (global block already covers animations) */
