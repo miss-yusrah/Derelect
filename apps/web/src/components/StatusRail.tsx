@@ -6,16 +6,12 @@ import { Gauge, StatRow } from './primitives'
 
 export interface StatusRailProps {
   snapshot: GameSnapshot
-  source: 'model' | 'chain'
   /** Index of the last cell that just changed (fuel gauge flash), or null. */
   fuelFlashCell?: number | null
 }
 
-export function StatusRail({ snapshot, source, fuelFlashCell = null }: StatusRailProps) {
-  const isPractice = source === 'model'
-  const stationTag = snapshot.stationAccount.startsWith('station.practice')
-    ? 'REL-07 // ORBITAL SALVAGE'
-    : 'ON-GRID // ORBITAL SALVAGE'
+export function StatusRail({ snapshot, fuelFlashCell = null }: StatusRailProps) {
+  const stationTag = 'ON-GRID // ORBITAL SALVAGE'
 
   const operating = formatCredits(snapshot.operatingYocto)
   const repairHeld = snapshot.repairDueTurn !== null && !snapshot.repairPaid
@@ -27,7 +23,7 @@ export function StatusRail({ snapshot, source, fuelFlashCell = null }: StatusRai
         <div className="rail-left__title">STATION</div>
         <div className="rail-left__name">
           {stationNameFrom(snapshot)}
-          <small>{isPractice ? 'PRACTICE STATION — LOCAL MODEL' : 'ORBITAL SALVAGE STATION'}</small>
+          <small>ORBITAL SALVAGE STATION</small>
         </div>
       </div>
 
@@ -107,14 +103,13 @@ export function StatusRail({ snapshot, source, fuelFlashCell = null }: StatusRai
         {stationTag}
         {'\n'}
         1 CR = 0.001 NEAR{'\n'}
-        {isPractice ? 'PRACTICE — NO CHAIN STATE' : `EPOCH ${snapshot.epoch} · CAMPAIGN ${snapshot.campaignId}`}
+        {`EPOCH ${snapshot.epoch} · CAMPAIGN ${snapshot.campaignId}`}
       </div>
     </aside>
   )
 }
 
 function stationNameFrom(snapshot: GameSnapshot): string {
-  if (snapshot.stationAccount.startsWith('station.practice')) return 'RELAY-07'
   const slug = snapshot.stationAccount.split('.')[0] ?? snapshot.stationAccount
   return slug.toUpperCase().slice(0, 12) || 'STATION'
 }

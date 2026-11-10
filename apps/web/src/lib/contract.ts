@@ -173,7 +173,7 @@ export async function getStationContract(
   stationAccount: string,
   runtime: import('./near').NearRuntime,
 ): Promise<StationContractClient> {
-  const { GAS_30_TGAS, ONE_YOCTO } = await import('../config')
+  const { GAS_30_TGAS, GAS_100_TGAS, ONE_YOCTO } = await import('../config')
   const wallet = await runtime.getWallet()
 
   const client: StationContractClient = {
@@ -243,7 +243,7 @@ export async function getStationContract(
         receiverId: stationAccount,
         methodName: 'claim_repair',
         args: {},
-        gas: GAS_30_TGAS,
+        gas: GAS_100_TGAS,
         deposit: '0',
       }))
     },
@@ -253,7 +253,7 @@ export async function getStationContract(
         receiverId: stationAccount,
         methodName: 'claim_refund',
         args: {},
-        gas: GAS_30_TGAS,
+        gas: GAS_100_TGAS,
         deposit: '0',
       }))
     },
@@ -263,7 +263,7 @@ export async function getStationContract(
         receiverId: stationAccount,
         methodName: 'claim_seller_proceeds',
         args: {},
-        gas: GAS_30_TGAS,
+        gas: GAS_100_TGAS,
         deposit: '0',
       }))
     },
@@ -273,7 +273,7 @@ export async function getStationContract(
         receiverId: stationAccount,
         methodName: 'nft_transfer',
         args: { receiver_id: receiverId, token_id: 'station', approval_id: null, memo: memo ?? null },
-        gas: GAS_30_TGAS,
+        gas: GAS_100_TGAS,
         deposit: ONE_YOCTO,
       }))
     },
@@ -282,16 +282,22 @@ export async function getStationContract(
 }
 
 async function wrappedTx(pending: Promise<import('./near').NearExecutionOutcome>): Promise<TxOutcome> {
+  let outcome: import('./near').NearExecutionOutcome
   try {
-    const outcome = await pending
-    const hash =
-      (outcome as { transaction?: { hash?: string | null } }).transaction?.hash ??
-      (outcome as { transactionHash?: string }).transactionHash ??
-      null
-    return { hash }
+    outcome = await pending
   } catch (error) {
     throw new Error(extractContractError(error))
   }
+  // Some wallets resolve with a failed outcome instead of rejecting.
+  const failure = (outcome as { status?: { Failure?: unknown } } | undefined)?.status?.Failure
+  if (failure !== undefined) {
+    throw new Error(extractContractError(JSON.stringify(failure)))
+  }
+  const hash =
+    (outcome as { transaction?: { hash?: string | null } } | undefined)?.transaction?.hash ??
+    (outcome as { transactionHash?: string } | undefined)?.transactionHash ??
+    null
+  return { hash }
 }
 
 /**
@@ -300,8 +306,8 @@ async function wrappedTx(pending: Promise<import('./near').NearExecutionOutcome>
  */
 export function extractContractError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
-  const match = raw.match(/panicked[^:]*:\s*(.+?)(?:\.\s*$|\n|$)/s)
-  if (match) return match[1].trim().replace(/^["{]|["}],?$/g, '')
+  const match = raw.match(/panicked[^:]*:\s*([^"\n\\]+)/)
+  if (match) return match[1].trim().replace(/\.$/, '')
   // Wallet-provider JSON dumps sometimes carry the message as a kv body.
   const quoted = raw.match(/"panicked"?[^a-zA-Z]*([A-Z][^"\n]{6,})/)
   if (quoted) return quoted[1].trim()

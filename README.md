@@ -18,16 +18,18 @@ supplier's claim.
 
 ![DERELICT station interface concept](design/derelict-station-concept.png)
 
-## 10-second start (no wallet needed)
+## Start the live station (NEAR testnet)
 
 ```bash
 pnpm install && pnpm --filter @derelict/game-model build
-pnpm --filter derelict-web dev       # open http://localhost:5173 — practice mode
+pnpm --filter derelict-web dev       # open http://localhost:5173
 ```
 
-Practice mode runs the shared deterministic model locally: learn the whole
-six-turn loop instantly. Testnet mode signs real transactions and reads real
-balances — pending stays pending until the chain confirms.
+The app opens on the live station `isa02.derelict-factory.testnet`. Reads are
+free; click **Connect wallet**, pick a NEAR testnet wallet, and every command
+is signed by that wallet. There is no practice or simulated mode: the screen
+always reflects `get_state()` / `get_offers()` / `get_ledger()` read back from
+the contract. Pending stays pending until the chain confirms.
 
 ## Why this is an "NFT that does something"
 
@@ -97,7 +99,8 @@ Full rules: [`docs/rules.md`](docs/rules.md). Judge walkthrough:
 - [x] Factory + keyless station accounts
 - [x] Sandbox integration tests (4/4)
 - [x] Web interface
-- [ ] Testnet hosting + demo video
+- [x] Live testnet station `isa02.derelict-factory.testnet` seeded and playable
+- [ ] Demo video
 
 Out of scope by design: approvals/marketplaces, custom tokens, deleting
 stations. Game-over permits claims settlement forever.

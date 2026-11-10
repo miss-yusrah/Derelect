@@ -4,16 +4,12 @@ import type {
   Offer,
   StationState,
 } from '@derelict/game-model'
-import { CAMPAIGN_TURNS } from '@derelict/game-model'
 import type { ChainBuckets, ChainLedgerEvent, ChainOffer, ChainState } from './contract'
-import { creditsOf } from './contract'
 
 /**
- * Faithful unified game snapshot shared by practice mode (from the TS model)
- * and testnet mode (from contract views). bigint money is yoctoNEAR.
+ * Faithful game snapshot derived from the station contract's views.
+ * bigint money is yoctoNEAR.
  */
-
-export type GameStateMode = 'practice' | 'testnet'
 
 export interface GameSnapshot {
   stationAccount: string
@@ -48,8 +44,6 @@ export interface LedgerRow {
   deltaYocto: bigint
   revision: number | null
   block: number | null
-  /** Where the row came from; every drawer/element must show it. */
-  source: 'model' | 'chain'
 }
 
 export type LedgerFilter = 'all' | 'actions' | 'money' | 'ownership'
@@ -90,8 +84,6 @@ export function ledgerKindOf(kind: string): LedgerFilter {
   return 'all'
 }
 
-export const CAMPAIGN_TURNS_UI = CAMPAIGN_TURNS
-
 /** Short action headline for timelines/result table. */
 export function actionLabel(action: ActionKind | string): string {
   if (typeof action !== 'string') {
@@ -127,61 +119,6 @@ export function actionLabel(action: ActionKind | string): string {
       return 'Repair effect'
     default:
       return action
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Deriving a snapshot from model state (practice)                     */
-/* ------------------------------------------------------------------ */
-
-export function snapshotFromState(state: StationState, escrowTotal: bigint): GameSnapshot {
-  return {
-    stationAccount: state.stationAccountId,
-    owner: state.owner,
-    campaignId: state.campaignId,
-    turn: state.turn,
-    complete: state.turn > CAMPAIGN_TURNS,
-    fuel: state.fuel,
-    hull: state.hull,
-    served: state.served,
-    upgrade: state.upgrade,
-    operatingYocto: state.operatingYocto,
-    listingYocto: state.listing ? state.listing.priceYocto : null,
-    revision: state.revision,
-    epoch: state.epoch,
-    repairDueTurn: state.repair ? state.repair.dueTurn : null,
-    repairPaid: state.repair?.paid ?? false,
-    repairApplied: state.repair?.effectApplied ?? false,
-    repairSupplier: state.repair ? state.repair.supplier : null,
-    outcome: outcomeOf(state.operatingYocto, state.hull, state.served, state.turn > CAMPAIGN_TURNS),
-    visitorsEscrowYocto: escrowTotal,
-    sellerReceivableYocto: totalOf(state.sellerReceivables),
-  }
-}
-
-function totalOf(map: Record<string, bigint>): bigint {
-  let sum = 0n
-  for (const key of Object.keys(map)) sum += map[key]
-  return sum
-}
-
-export function outcomeOf(
-  operatingYocto: bigint,
-  hull: number,
-  served: number,
-  complete: boolean,
-): CampaignOutcome {
-  if (!complete) return { complete: false, success: false, scoreYocto: null }
-  const win = hull >= 1 && served >= 3
-  return {
-    complete: true,
-    success: win,
-    reason: win
-      ? 'Campaign complete'
-      : hull < 1
-        ? 'Failed: hull destroyed'
-        : 'Failed: fewer than 3 ships served',
-    scoreYocto: operatingYocto,
   }
 }
 
@@ -231,7 +168,6 @@ export function ledgerRowsFromChain(events: ChainLedgerEvent[]): LedgerRow[] {
     deltaYocto: BigInt(event.operating_delta),
     revision: event.revision,
     block: event.block_height,
-    source: 'chain' as const,
   }))
 }
 

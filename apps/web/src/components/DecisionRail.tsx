@@ -16,25 +16,25 @@ import {
   type StationState,
 } from '@derelict/game-model'
 import { IconClock, IconDock, IconFuel, IconLedger, IconWrench, IconChevron, IconWarning } from './icons'
-import { DEMO_SUPPLIER } from './demo'
+import { SUPPLIER_ACCOUNT } from '../config'
 import type { GameSnapshot } from '../lib/state'
 import type { Offer } from '@derelict/game-model'
 
 export interface DecisionRailProps {
-  mode: 'practice' | 'testnet'
   snapshot: GameSnapshot
-  /** Model state to preview against (practice real state; chain synthesized). */
+  /** Chain state synthesized into the model so previews match on-chain rules. */
   previewState: StationState
-  /** Current practice/chain block reference used for offer eligibility. */
+  /** Current chain block reference used for offer eligibility. */
   currentBlock: bigint
+  walletAccount: string | null
+  /** True when the connected wallet owns the station. */
+  isCaptain: boolean
   confirmBusy: boolean
-  walletConnected: boolean
   onConfirm: (action: ActionKind) => void
+  /** Recorded repair supplier collects the protected reserve. */
+  onClaimRepair: () => void
   onConnectWallet: () => void
-  /** Practice mode: wipe the local run and start a fresh six-turn campaign. */
-  onStartFreshRun?: () => void
-  /** Testnet mode: leave the settled campaign and return to practice. */
-  onBackToPractice?: () => void
+  onOpenInspect: () => void
 }
 
 interface RowDef {
@@ -127,20 +127,22 @@ interface RowView {
 }
 
 export function DecisionRail({
-  mode,
   snapshot,
   previewState,
   currentBlock,
+  walletAccount,
+  isCaptain,
   confirmBusy,
-  walletConnected,
   onConfirm,
+  onClaimRepair,
   onConnectWallet,
-  onStartFreshRun,
-  onBackToPractice,
+  onOpenInspect,
 }: DecisionRailProps) {
+  const canClaimRepair =
+    walletAccount !== null && snapshot.repairSupplier === walletAccount && !snapshot.repairPaid
   const [selectedKind, setSelectedKind] = useState<ActionKind['kind']>('standardDocking')
   const [refuelUnits, setRefuelUnits] = useState(2)
-  const [supplier, setSupplier] = useState(DEMO_SUPPLIER)
+  const [supplier, setSupplier] = useState(SUPPLIER_ACCOUNT)
 
   const selected: ActionKind = useMemo(
     () => actionFor(selectedKind, refuelUnits, supplier),
@@ -225,6 +227,30 @@ export function DecisionRail({
         )}
       </div>
 
+      {canClaimRepair ? (
+        <div className="pane" aria-label="Supplier claim">
+          <div className="pane__preview-tag">
+            <IconWrench size={12} />
+            SUPPLIER CLAIM
+          </div>
+          <div className="pane__desc">
+            You are the recorded repair supplier. The protected reserve is yours once the repair is
+            eligible — before or after any sale of the station.
+          </div>
+          <button
+            className={`btn btn--primary btn--block${confirmBusy ? ' is-busy' : ''}`}
+            disabled={confirmBusy}
+            onClick={onClaimRepair}
+          >
+            {confirmBusy ? 'Working…' : 'Claim repair fee'}
+          </button>
+          <div className="pane__note">
+            Signs <span style={{ fontFamily: 'var(--font-mono)' }}>claim_repair()</span> — paid from the
+            reserve, never from operating funds.
+          </div>
+        </div>
+      ) : null}
+
       {snapshot.complete ? (
         <div className="endpanel" aria-label="Campaign result summary">
           <div
@@ -265,23 +291,17 @@ export function DecisionRail({
               </dd>
             </div>
           </dl>
-          {mode === 'practice' ? (
-            onStartFreshRun ? (
-              <button className="btn btn--primary btn--block" onClick={onStartFreshRun}>
-                Start fresh run
-              </button>
-            ) : null
-          ) : onBackToPractice ? (
-            <>
-              <div className="pane__note">
-                This campaign is settled on chain — the station keeps its final
-                treasury and creditor claims.
-              </div>
-              <button className="btn btn--block" onClick={onBackToPractice}>
-                Back to practice
-              </button>
-            </>
-          ) : null}
+          <div className="pane__note">
+            This campaign is settled on chain — the station keeps its final treasury and creditor
+            claims.
+          </div>
+          <button className="btn btn--block" onClick={onOpenInspect}>
+            {snapshot.listingYocto !== null && !isCaptain
+              ? 'Inspect & buy station'
+              : isCaptain
+                ? 'Inspect / list station'
+                : 'Inspect station'}
+          </button>
         </div>
       ) : (
         <>
@@ -367,21 +387,32 @@ export function DecisionRail({
             )}
 
             <div style={{ display: 'grid', gap: 6 }}>
-              {mode === 'practice' || walletConnected ? (
+              {!walletAccount ? (
+                <button className="btn btn--primary btn--block" onClick={onConnectWallet}>
+                  Connect wallet to command
+                </button>
+              ) : !isCaptain ? (
+                <button className="btn btn--block" onClick={onOpenInspect}>
+                  {snapshot.listingYocto !== null ? 'Inspect & buy station' : 'Inspect station'}
+                </button>
+              ) : (
                 <button
                   className={`btn btn--primary btn--block${confirmBusy ? ' is-busy' : ''}`}
                   disabled={!preview.ok || confirmBusy}
                   onClick={() => onConfirm(selected)}
                 >
-                  {confirmBusy ? 'Working…' : mode === 'practice' ? `Apply — ${selectedDef.title}` : `Confirm — ${selectedDef.title}`}
-                </button>
-              ) : (
-                <button className="btn btn--block" onClick={onConnectWallet} disabled={confirmBusy}>
-                  Connect wallet to command
+                  {confirmBusy ? 'Working…' : `Confirm — ${selectedDef.title}`}
                 </button>
               )}
-              {mode === 'practice' ? (
-                <div className="pane__note">Practice — local model, same rules, instant.</div>
+              {!walletAccount ? (
+                <div className="pane__note">
+                  Read-only until you connect. Every action is signed by your own NEAR wallet.
+                </div>
+              ) : !isCaptain ? (
+                <div className="pane__note">
+                  Connected as <span style={{ fontFamily: 'var(--font-mono)' }}>{walletAccount}</span>.
+                  Only the station captain ({snapshot.owner}) can command it.
+                </div>
               ) : (
                 <div className="pane__note">
                   Signs <span style={{ fontFamily: 'var(--font-mono)' }}>act(action, expected_revision)</span>

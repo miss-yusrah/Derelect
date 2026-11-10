@@ -9,7 +9,7 @@ import rpcConfig from '../config.json'
  *   3. the built-in testnet fallback constant.
  */
 
-export const DEFAULT_STATION_ACCOUNT = 'isa01.derelict-factory.testnet'
+export const DEFAULT_STATION_ACCOUNT = 'isa02.derelict-factory.testnet'
 
 const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {}
 
@@ -23,10 +23,10 @@ export const RPC_ENDPOINTS: string[] =
     ? rpcConfig.rpcEndpoints
     : ['https://rpc.testnet.fastnear.com']
 
-/** Practice-only station identity (never touches NEAR). */
-export const PRACTICE_STATION_ACCOUNT = 'station.practice.derelict'
-export const PRACTICE_OWNER = 'you.derelict.practice'
-export const PRACTICE_BUYER = 'buyer.derelict.practice'
+/** Seeded scenario accounts (the default repair supplier is pre-filled in the UI). */
+export const SUPPLIER_ACCOUNT: string = rpcConfig.demoAccounts.supplier
 
 export const GAS_30_TGAS = '30000000000000'
+/** Calls that schedule a payout or NFT-resolve promise need room for the callback. */
+export const GAS_100_TGAS = '100000000000000'
 export const ONE_YOCTO = '1'

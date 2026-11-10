@@ -7,14 +7,14 @@ import { useDialogFocus } from './primitives'
 
 export interface InspectBuyProps {
   open: boolean
-  mode: 'practice' | 'testnet'
   onClose: () => void
   snapshot: GameSnapshot
-  /** Connected wallet account (testnet), or null in practice. */
+  /** Connected wallet account, or null when read-only. */
   walletAccount: string | null
   confirmBusy: boolean
   alert: { text: string; tone: 'error' | 'info' } | null
   onDismissAlert: () => void
+  onConnectWallet: () => void
   onListForSale: (priceCredits: number) => void
   onUnlist: () => void
   onBuy: () => void
@@ -22,13 +22,13 @@ export interface InspectBuyProps {
 
 export function InspectBuy({
   open,
-  mode,
   onClose,
   snapshot,
   walletAccount,
   confirmBusy,
   alert,
   onDismissAlert,
+  onConnectWallet,
   onListForSale,
   onUnlist,
   onBuy,
@@ -36,10 +36,7 @@ export function InspectBuy({
   const [priceDraft, setPriceDraft] = useState('15')
   const panelRef = useDialogFocus<HTMLDivElement>(open, onClose)
 
-  const isCaptain =
-    mode === 'practice'
-      ? snapshot.owner.startsWith('you.derelict.practice')
-      : snapshot.owner === walletAccount && walletAccount !== null
+  const isCaptain = walletAccount !== null && snapshot.owner === walletAccount
   const listed = snapshot.listingYocto !== null
 
   useEffect(() => {
@@ -70,7 +67,7 @@ export function InspectBuy({
             STATION INSPECTION
           </span>
           <span className="overlay__note">
-            {mode === 'practice' ? 'PRACTICE SALE — LOCAL MODEL' : 'TESTNET MARKET'} // REV r{snapshot.revision} // EPOCH e{snapshot.epoch}
+            TESTNET MARKET // REV r{snapshot.revision} // EPOCH e{snapshot.epoch}
           </span>
           <button className="iconbtn" onClick={onClose} aria-label="Close inspector" style={{ marginLeft: 'auto' }}>
             <IconClose size={14} />
@@ -189,7 +186,7 @@ export function InspectBuy({
                 <button
                   className={`btn btn--primary btn--block${confirmBusy ? ' is-busy' : ''}`}
                   aria-busy={confirmBusy}
-                  disabled={!(price > 0) || confirmBusy || (mode === 'testnet' && walletAccount === null)}
+                  disabled={!(price > 0) || confirmBusy}
                   onClick={() => onListForSale(price)}
                 >
                   {confirmBusy ? 'Submitting…' : listed ? `Re-list at ${price} Cr` : 'List for sale'}
@@ -200,9 +197,8 @@ export function InspectBuy({
                   </button>
                 ) : null}
                 <div className="pane__note">
-                  {mode === 'testnet' && walletAccount === null
-                    ? 'Connect a testnet wallet to change the listing.'
-                    : 'Any NEAR account (or the practice buyer) can now inspect and purchase at this price.'}
+                  Any NEAR account can inspect and purchase at this price. The sale transfers command without
+                  touching operating funds, offers, or creditor claims.
                 </div>
               </>
             ) : (
@@ -223,15 +219,20 @@ export function InspectBuy({
                 <button
                   className={`btn btn--primary btn--block${confirmBusy ? ' is-busy' : ''}`}
                   aria-busy={confirmBusy}
-                  disabled={!listed || confirmBusy || (mode === 'testnet' && walletAccount === null)}
-                  onClick={onBuy}
+                  disabled={!listed || confirmBusy}
+                  onClick={() => {
+                    if (walletAccount === null) onConnectWallet()
+                    else onBuy()
+                  }}
                 >
-                  {confirmBusy ? 'Submitting…' : listingBuyLabel(listed, mode, walletAccount)}
+                  {confirmBusy ? 'Submitting…' : listingBuyLabel(listed, walletAccount)}
                 </button>
                 <div className="pane__note">
-                  {mode === 'testnet' && walletAccount === null
-                    ? 'Connect a testnet wallet — the purchase transaction attaches the exact listed price and the fresh revision.'
-                    : 'purchase(expected_revision) checks the revision read just now; a stale quote warns and re-arms with the new state.'}
+                  {walletAccount === null
+                    ? 'Connect a NEAR wallet — the purchase transaction attaches the exact listed price and the fresh revision.'
+                    : snapshot.owner === walletAccount
+                      ? 'You already command this station.'
+                      : 'purchase(expected_revision) checks the revision read just now; a stale quote warns and re-arms with the new state.'}
                 </div>
               </>
             )}
@@ -244,9 +245,8 @@ export function InspectBuy({
 
 const REPAIR_RESERVE = 4n * CREDIT
 
-function listingBuyLabel(listed: boolean, mode: 'practice' | 'testnet', walletAccount: string | null): string {
+function listingBuyLabel(listed: boolean, walletAccount: string | null): string {
   if (!listed) return 'No active listing'
-  if (mode === 'practice') return 'Buy (practice buyer)'
   if (walletAccount === null) return 'Connect wallet to buy'
   return 'Buy with wallet'
 }

@@ -1,6 +1,6 @@
 {
   "network": "testnet",
-  "stationAccount": "isa01.derelict-factory.testnet",
+  "stationAccount": "isa02.derelict-factory.testnet",
   "factoryAccount": "derelict-factory.testnet",
   "demoAccounts": {
     "captain": "captain.derelict-factory.testnet",

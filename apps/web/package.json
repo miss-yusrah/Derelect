@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "DERELICT station bridge web app — practice mode plus NEAR testnet wallet mode. Stations are NFTs that own their own money.",
+  "description": "DERELICT station bridge web app — a NEAR testnet wallet plays a real on-chain station.",
   "scripts": {
     "dev": "vite --host",
     "build": "tsc && vite build",

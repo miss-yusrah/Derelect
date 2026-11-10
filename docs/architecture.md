@@ -66,6 +66,6 @@ accounts cannot replace code (no delegate/add-key methods exposed).
 
 ## Parity
 
-`packages/game-model` is the TS reference (practice + previews). Both
+`packages/game-model` is the TS reference (UI action previews). Both
 published strategies are asserted in TS tests, in Rust unit tests, and in
 `scripts/check-parity.mjs`. Fixtures shared for scenario constants.

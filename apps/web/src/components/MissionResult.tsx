@@ -1,25 +1,20 @@
 import { formatCredits } from '@derelict/game-model'
-import { CREDIT, HULL_CAPACITY } from '@derelict/game-model'
+import { HULL_CAPACITY } from '@derelict/game-model'
 import type { GameSnapshot, LedgerRow } from '../lib/state'
-import { actionLabel } from '../lib/state'
-import { GAMEPLAY_KINDS } from '../lib/state'
+import { actionLabel, GAMEPLAY_KINDS } from '../lib/state'
 import { useDialogFocus } from './primitives'
 
 export interface MissionResultProps {
   snapshot: GameSnapshot
   events: LedgerRow[]
-  source: 'model' | 'chain'
   walletAccount: string | null
-  onNewPracticeRun: () => void
   onClose: () => void
 }
 
 export function MissionResult({
   snapshot,
   events,
-  source,
   walletAccount,
-  onNewPracticeRun,
   onClose,
 }: MissionResultProps) {
   const outcome = snapshot.outcome
@@ -48,7 +43,7 @@ export function MissionResult({
           <span style={{ color: 'var(--ink-3)' }}>
             {' '}
             — {snapshot.served} ships served · hull {snapshot.hull} / {HULL_CAPACITY} · captain {walletAccount ?? snapshot.owner} ·{' '}
-            {source === 'model' ? 'practice ledger' : 'chain ledger'}
+            chain ledger
           </span>
         </div>
 
@@ -70,7 +65,7 @@ export function MissionResult({
                 <th>ACTION</th>
                 <th>OPERATING Δ</th>
                 <th>KIND</th>
-                <th>SOURCE</th>
+                <th>LEDGER</th>
               </tr>
             </thead>
             <tbody>
@@ -82,7 +77,7 @@ export function MissionResult({
                     {row.deltaYocto === 0n ? '±0.000' : formatCredits(row.deltaYocto)}
                   </td>
                   <td className="num">{row.kind}</td>
-                  <td className="num">{row.source === 'model' ? 'model' : `ledger#${row.sequence}`}</td>
+                  <td className="num">#{row.sequence}</td>
                 </tr>
               ))}
               {history.rows.length === 0 ? <tr><td className="num" colSpan={5}>No actions were played.</td></tr> : null}
@@ -103,20 +98,9 @@ export function MissionResult({
         </div>
 
         <div className="result__actions">
-          {source === 'model' ? (
-            <>
-              <button className="btn btn--primary" onClick={onNewPracticeRun}>
-                New practice run
-              </button>
-              <button className="btn btn--quiet" onClick={onClose}>
-                Back to bridge
-              </button>
-            </>
-          ) : (
-            <button className="btn" onClick={onClose}>
-              Back to bridge
-            </button>
-          )}
+          <button className="btn" onClick={onClose}>
+            Back to bridge
+          </button>
         </div>
       </div>
     </div>
@@ -124,8 +108,7 @@ export function MissionResult({
 }
 
 function crToNear(yoctoValue: bigint): string {
-  const whole = yoctoValue / CREDIT
-  return `${whole}.000`
+  return (Number(yoctoValue) / 1e24).toFixed(3)
 }
 
 interface TurnRow {
@@ -133,7 +116,6 @@ interface TurnRow {
   kind: string
   text: string
   deltaYocto: bigint
-  source: 'model' | 'chain'
   sequence: number
 }
 
@@ -141,19 +123,14 @@ function turnTable(rows: LedgerRow[]): { rows: TurnRow[]; missed: number[] } {
   const rowsByTurn = new Map<number, TurnRow>()
   for (const row of rows) {
     if (!GAMEPLAY_KINDS.has(row.kind) || row.kind === 'repairEffect') continue
-    const current = rowsByTurn.get(row.turn)
-    const entry: TurnRow = {
+    if (rowsByTurn.has(row.turn)) continue
+    rowsByTurn.set(row.turn, {
       turn: row.turn,
       kind: row.kind,
-      text: actionKindText(row.kind),
+      text: actionLabel(row.kind),
       deltaYocto: row.deltaYocto,
-      source: row.source,
       sequence: row.sequence,
-    }
-    // First action per turn wins (repairEffect and action share a turn).
-    if (!current || (current.source !== row.source && row.source === 'chain')) {
-      rowsByTurn.set(row.turn, entry)
-    }
+    })
   }
   const list = Array.from(rowsByTurn.values()).sort((a, b) => a.turn - b.turn)
   const covered = new Set(list.map((row) => row.turn))
@@ -162,8 +139,4 @@ function turnTable(rows: LedgerRow[]): { rows: TurnRow[]; missed: number[] } {
     if (!covered.has(turn)) missed.push(turn)
   }
   return { rows: list, missed }
-}
-
-function actionKindText(kind: string): string {
-  return actionLabel(kind)
 }

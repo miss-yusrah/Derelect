@@ -8,11 +8,10 @@ const here = dirname(fileURLToPath(import.meta.url))
 const require_ = createRequire(import.meta.url)
 
 /**
- * NEAR libraries are OPTIONAL: the app must build (and run in practice-only
- * mode) even if they could not be installed. When a package is present Vite
+ * NEAR libraries are OPTIONAL at build time: when a package is present Vite
  * resolves it normally; when missing we alias the bare specifier onto a local
  * stub so the build and the guarded dynamic imports in src/lib/near.ts keep
- * working.
+ * working (the UI reports that wallet signing is unavailable).
  */
 function probe(id: string): boolean {
   try {

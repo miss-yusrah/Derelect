@@ -41,7 +41,7 @@ export function LedgerDrawer({ open, onClose, rows, stationAccount }: LedgerDraw
             <div className="drawer__title">LEDGER</div>
             <div className="drawer__subtitle">
               Every money and turn event on {stationAccount} — deltas to operating funds, tx block heights, and
-              each entry's source.
+              each entry's ledger position.
             </div>
           </div>
           <button className="iconbtn" onClick={onClose} aria-label="Close ledger" style={{ marginLeft: 'auto' }}>
@@ -75,7 +75,7 @@ export function LedgerDrawer({ open, onClose, rows, stationAccount }: LedgerDraw
                       ? 'var(--green)'
                       : 'var(--ink-3)'
                 return (
-                  <li key={`${row.source}-${row.sequence}`}>
+                  <li key={`${row.sequence}-${row.kind}`}>
                     <span className="turncell" style={{ fontFamily: 'var(--font-mono)', color: kindColor }}>
                       T{Math.max(row.turn, 0)}
                     </span>
@@ -90,17 +90,11 @@ export function LedgerDrawer({ open, onClose, rows, stationAccount }: LedgerDraw
                       {row.deltaYocto === 0n ? '±0 Cr' : formatSignedCredits(row.deltaYocto) + ' Cr'}
                     </span>
                     <span className="src">
-                      {row.source === 'model' ? (
-                        'local model hist entry ' + row.sequence
-                      ) : (
-                        <>
-                          ledger #{row.sequence}
-                          <span style={{ display: 'block', color: 'var(--ink-3)' }}>
-                            block {row.block ?? '—'}
-                            {row.revision ? ` · r${row.revision}` : ''}
-                          </span>
-                        </>
-                      )}
+                      ledger #{row.sequence}
+                      <span style={{ display: 'block', color: 'var(--ink-3)' }}>
+                        block {row.block ?? '—'}
+                        {row.revision ? ` · r${row.revision}` : ''}
+                      </span>
                     </span>
                   </li>
                 )

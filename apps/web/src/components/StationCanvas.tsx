@@ -5,7 +5,6 @@ export interface StationCanvasProps {
   snapshot: GameSnapshot
   /** True when the last completed action was a docking (ship at the dock). */
   dockedShip: boolean
-  source: 'model' | 'chain'
   spots: {
     standard: number
     heavy: number
@@ -98,7 +97,7 @@ function DockedShip() {
   )
 }
 
-export function StationCanvas({ snapshot: s, dockedShip, source, banner }: StationCanvasProps) {
+export function StationCanvas({ snapshot: s, dockedShip, banner }: StationCanvasProps) {
   return (
     <div className="station-canvas">
       <figure className="station-canvas-artwrap">
@@ -166,9 +165,7 @@ export function StationCanvas({ snapshot: s, dockedShip, source, banner }: Stati
       </figure>
 
       <div className="station-canvas-registries" aria-hidden="true">
-        <span className="registry-left">
-          {source === 'chain' ? 'CHAIN VIEW // 1 CR = 10^21 YOCTO' : 'PRACTICE MODEL // 1 CR = 10^21 YOCTO'}
-        </span>
+        <span className="registry-left">CHAIN VIEW // 1 CR = 10^21 YOCTO</span>
         <span className="registry-right">STATION ART — DERELICT CONCEPT (design/image-generation.json)</span>
       </div>
 

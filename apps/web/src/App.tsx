@@ -1,39 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  createStation,
-  STANDARD_SALVAGE,
-  CAMPAIGN_TURNS,
-  type ActionKind,
-  type Offer,
-  type StationState,
-} from '@derelict/game-model'
+import { CAMPAIGN_TURNS, type ActionKind, type Offer, type StationState } from '@derelict/game-model'
 import { loadNearRuntime, type NearRuntime } from './lib/near'
 import {
   extractContractError,
   getStationContract,
   toContractAction,
   CREDIT as CREDIT_UNIT,
+  type ChainState,
+  type StationContractClient,
 } from './lib/contract'
 import {
   ledgerRowsFromChain,
   chainOfferToModel,
   previewStateFromChain,
   snapshotFromChain,
-  snapshotFromState,
   type GameSnapshot,
   type LedgerRow,
 } from './lib/state'
-import {
-  clearPractice,
-  loadPractice,
-  practiceAct,
-  practiceList,
-  practicePurchase,
-  practiceUnlist,
-  savePractice,
-  practiceBlockHeight,
-} from './lib/practice'
-import { PRACTICE_OWNER, STATION_ACCOUNT } from './config'
+import { STATION_ACCOUNT } from './config'
 import { Header } from './components/Header'
 import { StatusRail } from './components/StatusRail'
 import { StationCanvas } from './components/StationCanvas'
@@ -45,8 +29,7 @@ import { MissionResult } from './components/MissionResult'
 import { Banner } from './components/primitives'
 import { IconClose } from './components/icons'
 
-type Mode = 'practice' | 'testnet'
-type TxKind = 'act' | 'list' | 'unlist' | 'purchase'
+type TxKind = 'act' | 'list' | 'unlist' | 'purchase' | 'claimRepair'
 
 interface BannerState {
   tone: 'error' | 'info' | 'ok' | 'neutral'
@@ -54,11 +37,36 @@ interface BannerState {
   detail?: string
 }
 
-const PRACTICE_STATION_ACCOUNT = 'station.practice.derelict'
-const PRACTICE_NAME_TAG = 'RELAY-07 · PRACTICE STATION'
+interface ChainView {
+  snapshot: GameSnapshot
+  offers: Offer[]
+  rows: LedgerRow[]
+  blockHeight: number
+}
 
-function freshPractice(): StationState {
-  return createStation(PRACTICE_STATION_ACCOUNT, PRACTICE_OWNER, STANDARD_SALVAGE, 1_000_000n)
+interface TxContext {
+  contract: StationContractClient
+  /** Station state read immediately before signing. */
+  state: ChainState
+  accountId: string
+}
+
+interface TxSpec {
+  kind: TxKind
+  /** Shown when there is no wallet session. */
+  connectPrompt: string
+  /** Refuse to sign when the station moved past the revision on screen. */
+  bindsRevision: boolean
+  submit: (ctx: TxContext) => Promise<unknown>
+  settledBanner?: (ctx: TxContext) => BannerState
+}
+
+function assertCaptain(state: ChainState, accountId: string): void {
+  if (state.owner !== accountId) {
+    throw new Error(
+      `Only the station captain (${state.owner}) may command this station. You are connected as ${accountId}.`,
+    )
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -69,26 +77,28 @@ function creditsToYocto(credits: number): bigint {
   return BigInt(Math.round(credits)) * CREDIT_UNIT
 }
 
-export function App(): JSX.Element {
-  // Jump links for judges/recordings: ?mode=testnet&station=<account>
-  const initialParams = new URLSearchParams(
-    typeof window !== 'undefined' ? window.location.search : '',
-  )
-  const CHAIN_STATION = initialParams.get('station') || STATION_ACCOUNT
-  const [mode, setMode] = useState<Mode>(
-    initialParams.get('mode') === 'testnet' ? 'testnet' : 'practice',
-  )
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
-  // Practice run: created synchronously, so a judge is playing immediately.
-  const [practice, setPractice] = useState<StationState>(() => loadPractice() ?? freshPractice())
+export function App(): JSX.Element {
+  // Jump link for recordings: ?station=<account> (defaults to config.json).
+  const [stationAccount] = useState(
+    () =>
+      new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('station') ||
+      STATION_ACCOUNT,
+  )
 
   // NEAR runtime: isolated wallet/RPC library state.
   const runtimeRef = useRef<NearRuntime | null>(null)
+  const [runtimeReady, setRuntimeReady] = useState(false)
   const [nearMissing, setNearMissing] = useState(false)
   const [walletAccount, setWalletAccount] = useState<string | null>(null)
+  const [connecting, setConnecting] = useState(false)
 
-  // Chain data (testnet only, never optimistic).
+  // Chain data (never optimistic).
   const [chainState, setChainState] = useState<ChainView | null>(null)
+  const chainRef = useRef<ChainView | null>(null)
   const [chainError, setChainError] = useState<string | null>(null)
   const [txPending, setTxPending] = useState<TxKind | null>(null)
   const pollingRef = useRef(false)
@@ -99,7 +109,6 @@ export function App(): JSX.Element {
   const [ledgerOpen, setLedgerOpen] = useState(false)
   const [inspectOpen, setInspectOpen] = useState(false)
   const [resultDismissed, setResultDismissed] = useState(false)
-  const [fuelFlashCell, setFuelFlashCell] = useState<number | null>(null)
 
   /* ------------------------------------------------------------------ */
   /* Boot                                                                */
@@ -107,57 +116,55 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     let cancelled = false
-    loadNearRuntime()
-      .then((runtime) => {
-        if (cancelled) return
-        runtimeRef.current = runtime
-        if (!runtime || !runtime.walletLibraryAvailable) {
-          setNearMissing(true)
-          return null
-        }
-        setNearMissing(false)
-        return runtime
-          .getWallet()
-          .then((wallet) => {
-            if (cancelled) return
-            if (wallet) setWalletAccount(wallet.accountId)
-          })
-          .catch(() => undefined)
-      })
-      .catch(() => {
-        if (!cancelled) setNearMissing(true)
-      })
+    void loadNearRuntime().then((runtime) => {
+      if (cancelled) return
+      if (!runtime) {
+        setNearMissing(true)
+        setChainError('NEAR runtime failed to load')
+        return
+      }
+      runtimeRef.current = runtime
+      setRuntimeReady(true)
+      if (!runtime.walletLibraryAvailable) {
+        setNearMissing(true)
+        return
+      }
+      runtime
+        .getWallet()
+        .then((wallet) => {
+          if (!cancelled && wallet) setWalletAccount(wallet.accountId)
+        })
+        .catch(() => undefined)
+    })
     return () => {
       cancelled = true
     }
   }, [])
 
-  useEffect(() => {
-    savePractice(practice)
-  }, [practice])
-
   /* ------------------------------------------------------------------ */
-  /* Chain refresh (read-only; runs while testnet)                       */
+  /* Chain refresh (read-only)                                           */
   /* ------------------------------------------------------------------ */
 
   const refreshChain = useCallback(
-    async (announce: boolean): Promise<boolean> => {
+    async (announce: boolean): Promise<ChainView | null> => {
       const runtime = runtimeRef.current
-      if (!runtime) return false
+      if (!runtime) return null
       try {
-        const contract = await getStationContract(CHAIN_STATION, runtime)
+        const contract = await getStationContract(stationAccount, runtime)
         const [state, offers, ledger, buckets] = await Promise.all([
           contract.viewState(),
           contract.viewOffers(),
-          contract.viewLedger(undefined, 50),
+          contract.viewLedger(0, 700),
           contract.viewBuckets(),
         ])
-        setChainState({
+        const view: ChainView = {
           snapshot: snapshotFromChain(state, buckets),
           offers: offers.map(chainOfferToModel),
           rows: ledgerRowsFromChain(ledger),
           blockHeight: state.block_height,
-        })
+        }
+        chainRef.current = view
+        setChainState(view)
         setChainError(null)
         if (announce) {
           setBanner({
@@ -166,134 +173,123 @@ export function App(): JSX.Element {
             detail: `revision ${state.revision} at block ${state.block_height}`,
           })
         }
-        return true
+        return view
       } catch (error) {
-        setChainError(error instanceof Error ? error.message : String(error))
-        return false
+        setChainError(errorText(error))
+        return null
       }
     },
-    [],
+    [stationAccount],
   )
 
   useEffect(() => {
-    if (mode !== 'testnet') return
-    let timer = 0
-    void refreshChain(false).then((loaded) => {
-      if (loaded && chainState === null) {
-        // Auto-dismiss the first successful connected banner for quiet judge UX.
-      }
-    })
-    timer = window.setInterval(() => {
-      if (!pollingRef.current) void refreshChain(false)
+    if (!runtimeReady) return
+    void refreshChain(false)
+    const timer = window.setInterval(() => {
+      if (!pollingRef.current && document.visibilityState !== 'hidden') void refreshChain(false)
     }, 3500)
     return () => {
       window.clearInterval(timer)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, refreshChain])
+  }, [refreshChain, runtimeReady])
 
-  /** Poll until the read-back confirms a change (never optimistic). */
+  /**
+   * Poll until the read-back shows a new revision (never optimistic).
+   * Resolves null when the revision has not moved before the deadline.
+   */
   const confirmSettled = useCallback(
-    async (previousRevision: number): Promise<boolean> => {
+    async (previousRevision: number): Promise<ChainView | null> => {
       const deadline = Date.now() + 90_000
       while (Date.now() < deadline) {
         await sleep(2400)
         const runtime = runtimeRef.current
         if (!runtime) break
         try {
-          const contract = await getStationContract(CHAIN_STATION, runtime)
+          const contract = await getStationContract(stationAccount, runtime)
           const state = await contract.viewState()
           if (state.revision !== previousRevision) {
-            await refreshChain(true)
-            return true
+            return refreshChain(true)
           }
         } catch {
           // RPC hiccup during settlement — keep waiting within the deadline.
         }
       }
-      await refreshChain(false)
-      return false
+      void refreshChain(false)
+      return null
     },
-    [refreshChain],
+    [refreshChain, stationAccount],
   )
 
   /* ------------------------------------------------------------------ */
-  /* Practice transitions                                                */
+  /* Signed transactions                                                 */
   /* ------------------------------------------------------------------ */
 
-  const applyAndFlash = useCallback((next: StationState, previousFuel: number) => {
-    setPractice(next)
-    if (next.fuel > previousFuel) {
-      setFuelFlashCell(next.fuel - previousFuel)
-      window.setTimeout(() => setFuelFlashCell(null), 750)
-    }
-  }, [])
-
-  const confirmPractice = useCallback(
-    (action: ActionKind) => {
-      const beforeFuel = practice.fuel
-      try {
-        const next = practiceAct(practice, action)
-        applyAndFlash(next, beforeFuel)
-        setMessage(null)
-        setInspectOpen(false)
-      } catch (error) {
-        setMessage({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
-      }
-    },
-    [practice, applyAndFlash],
-  )
-
-  /* ------------------------------------------------------------------ */
-  /* Testnet transitions                                                 */
-  /* ------------------------------------------------------------------ */
-
-  const confirmTestnetAction = useCallback(
-    async (action: ActionKind) => {
+  /**
+   * Shared signing flow: re-read the station, validate against that fresh
+   * state, sign with the connected wallet, then wait for the read-back.
+   * Resolves true only once the chain shows the new revision.
+   */
+  const runTx = useCallback(
+    async (spec: TxSpec): Promise<boolean> => {
       const runtime = runtimeRef.current
-      if (!runtime) return
+      if (!runtime) return false
       const wallet = await runtime.getWallet()
       if (!wallet) {
-        setMessage({ text: 'Connect a wallet to command this station', tone: 'info' })
-        return
+        setMessage({ text: spec.connectPrompt, tone: 'info' })
+        return false
       }
-      setTxPending('act')
+      const seenRevision = chainRef.current?.snapshot.revision ?? null
+      setTxPending(spec.kind)
       setMessage(null)
-      let previousRevision = 0
+      pollingRef.current = true
       try {
-        const contract = await getStationContract(CHAIN_STATION, runtime)
+        const contract = await getStationContract(stationAccount, runtime)
         const state = await contract.viewState()
-        previousRevision = state.revision
-        if (state.complete) throw new Error('Campaign is complete')
-        pollingRef.current = true
-        await contract.act(toContractAction(action), state.revision)
-        const settled = await confirmSettled(previousRevision)
+        if (spec.bindsRevision && seenRevision !== null && state.revision !== seenRevision) {
+          await refreshChain(false)
+          throw new Error(
+            'The station changed since this screen was read — review the refreshed numbers and confirm again',
+          )
+        }
+        const ctx: TxContext = { contract, state, accountId: wallet.accountId }
+        await spec.submit(ctx)
+        const settled = await confirmSettled(state.revision)
         if (!settled) {
           setBanner({
             tone: 'info',
             text: 'Submitted — no read-back yet.',
             detail: 'The revision has not moved; check the transaction in your wallet.',
           })
+          return false
         }
+        if (spec.settledBanner) setBanner(spec.settledBanner(ctx))
+        return true
       } catch (error) {
         setMessage({ text: extractContractError(error), tone: 'error' })
+        return false
       } finally {
         pollingRef.current = false
         setTxPending(null)
       }
     },
-    [confirmSettled],
+    [confirmSettled, refreshChain, stationAccount],
   )
 
-  const confirm = useCallback(
+  const confirmAction = useCallback(
     (action: ActionKind) => {
-      if (mode === 'practice') confirmPractice(action)
-      else void confirmTestnetAction(action)
+      void runTx({
+        kind: 'act',
+        connectPrompt: 'Connect a wallet to command this station',
+        bindsRevision: true,
+        submit: ({ contract, state, accountId }) => {
+          assertCaptain(state, accountId)
+          if (state.complete) throw new Error('Campaign is complete')
+          return contract.act(toContractAction(action), state.revision)
+        },
+      })
     },
-    [mode, confirmPractice, confirmTestnetAction],
+    [runTx],
   )
-
-  /* Listing ------------------------------------------------------------ */
 
   const listForSale = useCallback(
     (priceCredits: number) => {
@@ -301,223 +297,158 @@ export function App(): JSX.Element {
         setMessage({ text: 'Enter a positive whole number of credits', tone: 'error' })
         return
       }
-      const priceYocto = creditsToYocto(priceCredits)
-      if (mode === 'practice') {
-        setPractice((state) => practiceList(state, priceYocto))
-        setBanner({ tone: 'ok', text: 'Practice listing active.', detail: `${priceCredits} Cr, buyer pays you, operations untouched` })
-        return
-      }
-      void (async () => {
-        const runtime = runtimeRef.current
-        if (!runtime) return
-        const wallet = await runtime.getWallet()
-        if (!wallet) {
-          setMessage({ text: 'Connect a wallet to list this station', tone: 'info' })
-          return
-        }
-        setTxPending('list')
-        try {
-          const contract = await getStationContract(CHAIN_STATION, runtime)
-          await contract.listForSale(priceYocto)
-          const settled = await confirmSettled(Infinity) // listing bumps revision
-          if (settled) setBanner({ tone: 'ok', text: 'Listing confirmed on chain.' })
-        } catch (error) {
-          setMessage({ text: extractContractError(error), tone: 'error' })
-        } finally {
-          setTxPending(null)
-        }
-      })()
+      void runTx({
+        kind: 'list',
+        connectPrompt: 'Connect a wallet to list this station',
+        bindsRevision: false,
+        submit: ({ contract, state, accountId }) => {
+          assertCaptain(state, accountId)
+          return contract.listForSale(creditsToYocto(priceCredits))
+        },
+        settledBanner: () => ({ tone: 'ok', text: `Listing confirmed at ${priceCredits} Cr.` }),
+      })
     },
-    [mode, confirmSettled],
+    [runTx],
   )
 
   const unlist = useCallback(() => {
-    if (mode === 'practice') {
-      setPractice((state) => practiceUnlist(state))
-      setBanner({ tone: 'neutral', text: 'Listing removed (practice).' })
-      return
-    }
-    void (async () => {
-      const runtime = runtimeRef.current
-      if (!runtime) return
-      const wallet = await runtime.getWallet()
-      if (!wallet) {
-        setMessage({ text: 'Connect a wallet to change this listing', tone: 'info' })
-        return
-      }
-      setTxPending('unlist')
-      try {
-        const contract = await getStationContract(CHAIN_STATION, runtime)
-        await contract.unlist()
-        await confirmSettled(Infinity)
-        setBanner({ tone: 'ok', text: 'Listing removed on chain.' })
-      } catch (error) {
-        setMessage({ text: extractContractError(error), tone: 'error' })
-      } finally {
-        setTxPending(null)
-      }
-    })()
-  }, [mode, confirmSettled])
-
-  /* Purchase (testnet reads a fresh revision; practice pays as demo buyer) */
+    void runTx({
+      kind: 'unlist',
+      connectPrompt: 'Connect a wallet to change this listing',
+      bindsRevision: false,
+      submit: ({ contract, state, accountId }) => {
+        assertCaptain(state, accountId)
+        return contract.unlist()
+      },
+      settledBanner: () => ({ tone: 'ok', text: 'Listing removed on chain.' }),
+    })
+  }, [runTx])
 
   const buy = useCallback(() => {
-    if (mode === 'practice') {
-      try {
-        setPractice((state) => practicePurchase(state))
-        setBanner({
-          tone: 'ok',
-          text: 'Practice sale executed.',
-          detail: `ownership moved to ${PRACTICE_BUYER_LABEL}; resources and creditor claims preserved`,
-        })
-      } catch (error) {
-        setMessage({ text: error instanceof Error ? error.message : String(error), tone: 'error' })
-      }
-      return
-    }
-    void (async () => {
-      const runtime = runtimeRef.current
-      if (!runtime) return
-      const wallet = await runtime.getWallet()
-      if (!wallet) {
-        setMessage({ text: 'Connect a wallet to buy this station', tone: 'info' })
-        return
-      }
-      setTxPending('purchase')
-      try {
-        const contract = await getStationContract(CHAIN_STATION, runtime)
-        const state = await contract.viewState()
+    void runTx({
+      kind: 'purchase',
+      connectPrompt: 'Connect a wallet to buy this station',
+      // The buyer pays the price they were shown: a moved revision means a stale quote.
+      bindsRevision: true,
+      submit: ({ contract, state, accountId }) => {
         if (state.listing === null) throw new Error('No active listing')
-        if (state.owner === wallet.accountId) throw new Error('Buyer is already the captain')
-        pollingRef.current = true
-        await contract.purchase(state.revision, BigInt(state.listing))
-        const settled = await confirmSettled(state.revision)
-        if (!settled) {
-          setBanner({ tone: 'info', text: 'Submitted — no read-back yet.' })
-        }
-      } catch (error) {
-        const text = extractContractError(error)
-        if (/stale quote|revision/i.test(text)) {
-          setMessage({
-            text: `${text}. The contract state moved after you opened this panel — refreshing now; re-open and retry.`,
-            tone: 'error',
-          })
-          await refreshChain(false)
-        } else {
-          setMessage({ text, tone: 'error' })
-        }
-      } finally {
-        pollingRef.current = false
-        setTxPending(null)
-      }
-    })()
-  }, [mode, confirmSettled, refreshChain])
+        if (state.owner === accountId) throw new Error('You already command this station')
+        return contract.purchase(state.revision, BigInt(state.listing))
+      },
+      settledBanner: ({ accountId }) => ({
+        tone: 'ok',
+        text: 'Station purchased. You are the captain.',
+        detail: `${accountId} now commands ${stationAccount}.`,
+      }),
+    }).then((settled) => {
+      if (settled) setInspectOpen(false)
+    })
+  }, [runTx, stationAccount])
 
-  /* Wallet & mode ------------------------------------------------------ */
+  const claimRepair = useCallback(() => {
+    void runTx({
+      kind: 'claimRepair',
+      connectPrompt: 'Connect the supplier wallet to claim the repair fee',
+      bindsRevision: false,
+      submit: ({ contract, state, accountId }) => {
+        if (state.repair?.supplier !== accountId) throw new Error('Only the recorded supplier may claim')
+        return contract.claimRepair()
+      },
+      settledBanner: () => ({
+        tone: 'ok',
+        text: 'Repair fee claimed.',
+        detail: 'The protected reserve is paid out to the supplier; the ledger records the payout.',
+      }),
+    })
+  }, [runTx])
 
-  const connectWallet = useCallback(() => {
+  /* Wallet ------------------------------------------------------------- */
+
+  const connectWallet = useCallback(async () => {
+    if (connecting) return
     const runtime = runtimeRef.current
     if (!runtime || !runtime.walletLibraryAvailable) {
       setNearMissing(true)
       setBanner({
         tone: 'error',
         text: 'Wallet library unavailable in this build.',
-        detail: 'near-api-js / @hot-labs/near-connect failed to load — practice mode stays available.',
+        detail: 'The NEAR connector failed to load. Reload the page or check the network.',
       })
       return
     }
-    void (async () => {
-      try {
-        const wallet = await runtime.connectWallet()
-        if (wallet) {
-          setWalletAccount(wallet.accountId)
-          setBanner({ tone: 'ok', text: `Wallet connected: ${wallet.accountId}`, detail: 'testnet mode is live' })
-          void refreshChain(false)
-        }
-      } catch (error) {
-        setMessage({
-          text: `Wallet sign-in did not complete: ${error instanceof Error ? error.message : String(error)}`,
-          tone: 'info',
-        })
+    setConnecting(true)
+    setMessage(null)
+    try {
+      const wallet = await runtime.connectWallet()
+      if (!wallet) {
+        setMessage({ text: 'No wallet account was returned. Please try again.', tone: 'info' })
+        return
       }
-    })()
-  }, [refreshChain])
-
-  const switchMode = useCallback(
-    (next: Mode) => {
-      if (next === mode) return
-      setBanner(null)
-      setMessage(null)
-      if (next === 'testnet') {
-        const runtime = runtimeRef.current
-        if (!runtime || !runtime.walletLibraryAvailable) {
-          setNearMissing(true)
+      setWalletAccount(wallet.accountId)
+      setBanner({
+        tone: 'ok',
+        text: `Wallet connected: ${wallet.accountId}`,
+        detail: 'NEAR testnet — every action is signed by your wallet.',
+      })
+      const view = await refreshChain(false)
+      if (view && view.snapshot.owner !== wallet.accountId) {
+        if (view.snapshot.listingYocto !== null) {
+          setInspectOpen(true)
           setBanner({
-            tone: 'error',
-            text: 'Wallet libraries unavailable — practice only.',
-            detail: 'testnet mode needs near-api-js and @hot-labs/near-connect installed.',
+            tone: 'info',
+            text: `Connected as ${wallet.accountId}`,
+            detail: `This station is commanded by ${view.snapshot.owner}. It is listed — buy it to take command.`,
           })
-          return
+        } else {
+          setBanner({
+            tone: 'info',
+            text: `Connected as ${wallet.accountId}`,
+            detail: `This station is commanded by ${view.snapshot.owner}. Only the captain can act.`,
+          })
         }
-        setChainState(null)
-        setMode('testnet')
-        void refreshChain(false)
-        runtime
-          .getWallet()
-          .then((wallet) => {
-            if (wallet) setWalletAccount(wallet.accountId)
-          })
-          .catch(() => undefined)
-      } else {
-        setMode('practice')
       }
-    },
-    [mode, refreshChain],
-  )
+    } catch (error) {
+      const raw = errorText(error)
+      setMessage({
+        text: /reject|cancel|closed|denied/i.test(raw)
+          ? 'Wallet sign-in cancelled.'
+          : `Wallet sign-in failed: ${raw}`,
+        tone: 'info',
+      })
+    } finally {
+      setConnecting(false)
+    }
+  }, [connecting, refreshChain])
+
+  const disconnectWallet = useCallback(async () => {
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    try {
+      await runtime.disconnectWallet()
+    } catch {
+      // The local session is cleared even if the wallet rejects sign-out.
+    }
+    setWalletAccount(null)
+    setBanner({ tone: 'neutral', text: 'Wallet disconnected.', detail: 'The station is read-only until you reconnect.' })
+    void refreshChain(false)
+  }, [refreshChain])
 
   /* ------------------------------------------------------------------ */
   /* Derived view                                                        */
   /* ------------------------------------------------------------------ */
 
-  const practiceSnapshot = useMemo<GameSnapshot>(() => {
-    let escrow = 0n
-    for (const offer of practice.offers) {
-      if (!offer.used && !offer.refunded && offer.campaignId === practice.campaignId) {
-        escrow += offer.escrowYocto
-      }
-    }
-    return snapshotFromState(practice, escrow)
-  }, [practice])
-
-  const practiceRows = useMemo<LedgerRow[]>(
-    () =>
-      practice.history.map((event, i) => ({
-        sequence: i + 1,
-        turn: event.turn,
-        kind: event.kind,
-        text: event.text,
-        deltaYocto: event.operatingDeltaYocto,
-        revision: practice.revision,
-        block: null,
-        source: 'model' as const,
-      })),
-    [practice],
-  )
-
-  const isTestnet = mode === 'testnet'
-  const snapshot = isTestnet ? chainState?.snapshot ?? null : practiceSnapshot
-  const rows = isTestnet ? chainState?.rows ?? [] : practiceRows
-  const offers = isTestnet ? chainState?.offers ?? [] : practice.offers
+  const snapshot = chainState?.snapshot ?? null
+  const rows = chainState?.rows ?? []
+  const offers = chainState?.offers ?? []
 
   const previewState = useMemo<StationState | null>(() => {
     if (!snapshot) return null
-    if (!isTestnet) return practice
     return previewStateFromChain(snapshot, offers)
-  }, [snapshot, isTestnet, practice, offers])
+  }, [snapshot, offers])
 
   const dockedShip = useMemo(() => {
     if (!snapshot || snapshot.complete) return false
-    return rows.slice(0, 3).some((row) => row.kind === 'standardDocking' || row.kind === 'heavyDocking')
+    return rows.slice(-3).some((row) => row.kind === 'standardDocking' || row.kind === 'heavyDocking')
   }, [snapshot, rows])
 
   const offerCounts = useMemo(() => {
@@ -530,48 +461,40 @@ export function App(): JSX.Element {
     return counts
   }, [snapshot, offers])
 
+  const isCaptain = snapshot !== null && walletAccount !== null && snapshot.owner === walletAccount
+
   const connectionChip = useMemo(() => {
+    if (connecting) {
+      return {
+        variant: 'pending' as const,
+        label: 'CONNECTING',
+        detail: 'waiting for wallet sign-in',
+      }
+    }
     if (txPending !== null) {
       return {
         variant: 'pending' as const,
-        active: false,
         label: 'PENDING',
         detail: 'submitted — updating only after the chain read-back',
       }
     }
-    if (!isTestnet) {
-      return { variant: 'practice' as const, active: true, label: 'PRACTICE', detail: 'local model · saved in browser' }
-    }
     if (chainError) {
-      return { variant: 'disconnected' as const, active: false, label: 'DISCONNECTED', detail: chainError }
+      return { variant: 'disconnected' as const, label: 'DISCONNECTED', detail: chainError }
     }
     if (nearMissing) {
-      return { variant: 'disconnected' as const, active: false, label: 'DISCONNECTED', detail: 'wallet libraries missing' }
+      return { variant: 'disconnected' as const, label: 'DISCONNECTED', detail: 'wallet library missing' }
     }
     if (walletAccount === null) {
       return {
         variant: 'disconnected' as const,
-        active: false,
         label: 'DISCONNECTED',
         detail: 'no wallet session — read-only',
       }
     }
-    return { variant: 'testnet' as const, active: true, label: 'TESTNET', detail: walletAccount }
-  }, [txPending, isTestnet, chainError, nearMissing, walletAccount])
+    return { variant: 'testnet' as const, label: 'TESTNET', detail: walletAccount }
+  }, [connecting, txPending, chainError, nearMissing, walletAccount])
 
   const showResult = snapshot?.outcome.complete === true && !resultDismissed
-
-  /** Shared by the mission-result overlay and the decision rail's ended state. */
-  const startFreshRun = () => {
-    clearPractice()
-    setPractice(freshPractice())
-    setResultDismissed(false)
-    setBanner({
-      tone: 'ok',
-      text: 'New practice run: 10 Cr operating, fuel 4, hull 2.',
-      detail: 'serves six fresh visitor offers',
-    })
-  }
 
   /* ------------------------------------------------------------------ */
   /* Render                                                              */
@@ -579,51 +502,57 @@ export function App(): JSX.Element {
 
   if (!snapshot || !previewState) {
     return (
-      <div className="boot" role="status" style={{ display: 'grid', gap: 12, justifyItems: 'center' }}>
-        <span>{isTestnet ? 'READING STATION FROM TESTNET…' : 'SPOOLING UP…'}</span>
-        {chainError ? (
-          <span style={{ color: 'var(--red)', fontSize: 13, maxWidth: 460, textAlign: 'center' }}>
-            {chainError}
-          </span>
-        ) : null}
-        {isTestnet ? (
-          <>
-            <span style={{ color: 'var(--ink-3)', fontSize: 12 }}>
-              A slow RPC read can take a moment — practice stays available.
-            </span>
-            <button className="btn btn--quiet" onClick={() => setMode('practice')}>
-              Back to practice
+      <div className="boot">
+        <div className="boot__panel">
+          <div className="boot__wordmark">DERELICT</div>
+          <div className="boot__status">
+            {chainError ? 'STATION READ FAILED' : 'READING STATION FROM TESTNET…'}
+          </div>
+          <div className="boot__station">{stationAccount}</div>
+          {chainError ? <div className="boot__error">{chainError}</div> : null}
+          {nearMissing ? (
+            <div className="boot__error">Wallet library unavailable. Reload the page or check your connection.</div>
+          ) : null}
+          <div className="boot__actions">
+            {walletAccount ? (
+              <span className="boot__account">WALLET {walletAccount}</span>
+            ) : (
+              <button className="btn btn--primary" onClick={() => void connectWallet()} disabled={connecting}>
+                {connecting ? 'Connecting…' : 'Connect wallet'}
+              </button>
+            )}
+            <button className="btn btn--quiet" onClick={() => void refreshChain(false)}>
+              Retry read
             </button>
-          </>
-        ) : null}
+          </div>
+          <div className="boot__note">NEAR testnet · no simulation · every action is signed</div>
+        </div>
       </div>
     )
   }
+
+  const stationName = snapshot.stationAccount.split('.')[0]?.toUpperCase() ?? 'STATION'
 
   return (
     <div className="app">
       <Header
         stationAccount={snapshot.stationAccount}
-        stationName={isTestnet ? `${snapshot.stationAccount.split('.')[0]?.toUpperCase() ?? 'STATION'}` : PRACTICE_NAME_TAG}
+        stationName={stationName}
         playedTurns={Math.min(Math.max(snapshot.turn - 1, 0), CAMPAIGN_TURNS)}
-        mode={mode}
         connectionChip={connectionChip}
-        onModePractice={() => switchMode('practice')}
-        onModeTestnet={() => switchMode('testnet')}
+        walletAccount={walletAccount}
+        connecting={connecting}
+        onConnectWallet={() => void connectWallet()}
+        onDisconnectWallet={() => void disconnectWallet()}
         onOpenInspect={() => setInspectOpen(true)}
       />
 
       <div className="shell">
-        <StatusRail
-          snapshot={snapshot}
-          source={isTestnet ? 'chain' : 'model'}
-          fuelFlashCell={fuelFlashCell}
-        />
+        <StatusRail snapshot={snapshot} />
 
         <StationCanvas
           snapshot={snapshot}
           dockedShip={dockedShip}
-          source={isTestnet ? 'chain' : 'model'}
           spots={offerCounts}
           banner={
             banner ? (
@@ -638,16 +567,16 @@ export function App(): JSX.Element {
         />
 
         <DecisionRail
-          mode={mode}
           snapshot={snapshot}
           previewState={previewState}
-          currentBlock={isTestnet ? BigInt(chainState?.blockHeight ?? 0) : practiceBlockHeight(practice)}
+          currentBlock={BigInt(chainState?.blockHeight ?? 0)}
+          walletAccount={walletAccount}
+          isCaptain={isCaptain}
           confirmBusy={txPending !== null}
-          walletConnected={walletAccount !== null}
-          onConfirm={confirm}
-          onConnectWallet={connectWallet}
-          onStartFreshRun={startFreshRun}
-          onBackToPractice={() => switchMode('practice')}
+          onConfirm={confirmAction}
+          onClaimRepair={claimRepair}
+          onConnectWallet={() => void connectWallet()}
+          onOpenInspect={() => setInspectOpen(true)}
         />
       </div>
 
@@ -665,7 +594,6 @@ export function App(): JSX.Element {
       <BottomActivity
         events={rows}
         currentTurn={snapshot.turn}
-        source={isTestnet ? 'chain' : 'model'}
         onOpenLedger={() => setLedgerOpen(true)}
       />
 
@@ -678,13 +606,13 @@ export function App(): JSX.Element {
 
       <InspectBuy
         open={inspectOpen}
-        mode={mode}
         onClose={() => setInspectOpen(false)}
         snapshot={snapshot}
         walletAccount={walletAccount}
         confirmBusy={txPending !== null}
         alert={message}
         onDismissAlert={() => setMessage(null)}
+        onConnectWallet={() => void connectWallet()}
         onListForSale={listForSale}
         onUnlist={unlist}
         onBuy={buy}
@@ -694,21 +622,10 @@ export function App(): JSX.Element {
         <MissionResult
           snapshot={snapshot}
           events={rows}
-          source={isTestnet ? 'chain' : 'model'}
           walletAccount={walletAccount}
-          onNewPracticeRun={startFreshRun}
           onClose={() => setResultDismissed(true)}
         />
       ) : null}
     </div>
   )
 }
-
-interface ChainView {
-  snapshot: GameSnapshot
-  offers: Offer[]
-  rows: LedgerRow[]
-  blockHeight: number
-}
-
-const PRACTICE_BUYER_LABEL = 'buyer.derelict.practice'

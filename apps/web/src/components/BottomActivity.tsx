@@ -7,16 +7,14 @@ export interface BottomActivityProps {
   events: LedgerRow[]
   /** 1-based next turn (or CAMPAIGN_TURNS+1 when complete). */
   currentTurn: number
-  source: 'model' | 'chain'
   onOpenLedger: () => void
 }
 
 const VISIBLE_ROWS = 4
 
-export function BottomActivity({ events, currentTurn, source, onOpenLedger }: BottomActivityProps) {
-  const recent = events.slice(0, VISIBLE_ROWS)
-  const sourceStamp =
-    source === 'model' ? ('SOURCE: LOCAL MODEL' as const) : `SOURCE: CONTRACT get_ledger()`
+export function BottomActivity({ events, currentTurn, onOpenLedger }: BottomActivityProps) {
+  const recent = events.slice(-VISIBLE_ROWS).reverse()
+  const sourceStamp = 'SOURCE: CONTRACT get_ledger()'
 
   return (
     <div className="shell__bottom" aria-label="Mission activity">
@@ -38,10 +36,7 @@ export function BottomActivity({ events, currentTurn, source, onOpenLedger }: Bo
               const deltaClass =
                 row.deltaYocto > 0n ? 'pos' : row.deltaYocto < 0n ? 'neg' : ''
               return (
-                <li
-                  className="logrow"
-                  key={`${row.source}-${row.sequence}-${row.kind}`}
-                >
+                <li className="logrow" key={`${row.sequence}-${row.kind}`}>
                   <span className="logrow__turn">T{Math.max(row.turn, 0)}</span>
                   <span className="logrow__kind">{actionLabel(row.kind)}</span>
                   <span className="logrow__text" title={row.text}>
@@ -51,13 +46,8 @@ export function BottomActivity({ events, currentTurn, source, onOpenLedger }: Bo
                     {row.deltaYocto === 0n ? '±0' : formatSignedCredits(row.deltaYocto)}
                     <span className="logrow__cr"> Cr</span>
                   </span>
-                  <span
-                    className="logrow__src"
-                    title={`Entry ${row.sequence} of the ${
-                      row.source === 'model' ? 'local model history' : 'contract ledger'
-                    }`}
-                  >
-                    {row.source === 'model' ? 'MODEL' : `LEDGER #${row.sequence}`}
+                  <span className="logrow__src" title={`Entry ${row.sequence} of the contract ledger`}>
+                    {`LEDGER #${row.sequence}`}
                   </span>
                 </li>
               )
