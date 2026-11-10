@@ -1,6 +1,5 @@
-import { useState } from 'react'
-import { IconCheck, IconCopy, IconHazard } from './icons'
-import { Chip } from './primitives'
+import { useEffect, useRef, useState } from 'react'
+import { IconCheck, IconChevron, IconCopy, IconHazard, IconLock } from './icons'
 import { CAMPAIGN_TURNS } from '@derelict/game-model'
 
 export interface HeaderProps {
@@ -40,6 +39,9 @@ export function Header({
   onOpenInspect,
 }: HeaderProps) {
   const [copied, setCopied] = useState(false)
+  const testnetLocked =
+    mode === 'testnet' && connectionChip.variant !== 'testnet' && connectionChip.variant !== 'pending'
+
   return (
     <header className="hdr">
       <div className="wordmark">
@@ -77,25 +79,134 @@ export function Header({
         </span>
       </div>
       <div className="hdr__divider" />
-      <Chip {...connectionChip} />
-      <Chip
-        variant="practice"
-        active={mode === 'practice'}
-        label="PRACTICE"
-        title="Local model-only run. Free, instant, no wallet. Saves to this browser."
-        onClick={onModePractice}
-      />
-      <Chip
-        variant="testnet"
-        active={mode === 'testnet'}
-        label="TESTNET"
-        locked={mode === 'testnet' && connectionChip.variant !== 'testnet'}
-        title="Live NEAR testnet station. Actions require your wallet signature."
-        onClick={onModeTestnet}
-      />
+
+      <div className="modeswitch" role="radiogroup" aria-label="Play mode">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === 'practice'}
+          className={`modeswitch__seg${mode === 'practice' ? ' modeswitch__seg--on' : ''}`}
+          onClick={onModePractice}
+          title="Local model-only run. Free, instant, no wallet. Saves to this browser."
+        >
+          Practice
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={mode === 'testnet'}
+          className={`modeswitch__seg${mode === 'testnet' ? ' modeswitch__seg--on' : ''}`}
+          onClick={onModeTestnet}
+          title="Live NEAR testnet station. Actions require your wallet signature."
+        >
+          Testnet
+          {testnetLocked ? <IconLock size={12} className="modeswitch__lock" /> : null}
+        </button>
+      </div>
+
+      <AccountMenu chip={connectionChip} mode={mode} />
+
       <button className="btn btn--small" onClick={onOpenInspect}>
         List Station
       </button>
     </header>
   )
+}
+
+/* ------------------------------------------------------------------
+   Account / connection menu — the wallet session lives here instead
+   of competing with the mode switch as a second status chip.
+   ------------------------------------------------------------------ */
+
+function AccountMenu({ chip, mode }: { chip: HeaderProps['connectionChip']; mode: HeaderProps['mode'] }) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    const onPointerDown = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onPointerDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onPointerDown)
+    }
+  }, [open])
+
+  const buttonLabel =
+    chip.variant === 'testnet'
+      ? shortAccount(chip.detail ?? '')
+      : chip.variant === 'pending'
+        ? 'SUBMITTING…'
+        : chip.variant === 'disconnected'
+          ? 'NO SESSION'
+          : 'LOCAL'
+
+  const statusWord =
+    chip.variant === 'practice'
+      ? 'PRACTICE — LOCAL MODEL'
+      : chip.variant === 'pending'
+        ? 'TRANSACTION PENDING'
+        : chip.variant === 'disconnected'
+          ? mode === 'testnet'
+            ? 'TESTNET — DISCONNECTED'
+            : 'DISCONNECTED'
+          : 'TESTNET — WALLET CONNECTED'
+
+  const account = chip.variant === 'testnet' ? chip.detail ?? null : null
+
+  return (
+    <div className="acct" ref={rootRef}>
+      <button
+        type="button"
+        className={`acct__btn${open ? ' acct__btn--open' : ''}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        title={chip.detail ?? chip.label}
+      >
+        <span className={`acct__dot acct__dot--${chip.variant}`} aria-hidden="true" />
+        <span className="acct__label">{buttonLabel}</span>
+        <IconChevron size={12} className="acct__caret" />
+      </button>
+      {open ? (
+        <div className="acct__menu" role="menu" aria-label="Connection and account">
+          <span className="acct__menu-k">STATUS</span>
+          <span className="acct__menu-v">{statusWord}</span>
+          {chip.detail ? <span className="acct__menu-detail">{chip.detail}</span> : null}
+          {account ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="acct__menu-copy"
+              onClick={async () => {
+                if (await copyText(account)) {
+                  setCopied(true)
+                  window.setTimeout(() => setCopied(false), 1200)
+                }
+              }}
+            >
+              {copied ? (
+                <IconCheck size={13} style={{ color: 'var(--green)' }} />
+              ) : (
+                <IconCopy size={13} />
+              )}
+              {copied ? 'Copied' : `Copy ${account}`}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function shortAccount(account: string): string {
+  if (account.length <= 18) return account
+  return `${account.slice(0, 9)}…${account.slice(-5)}`
 }

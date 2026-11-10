@@ -11,7 +11,7 @@ export interface BottomActivityProps {
   onOpenLedger: () => void
 }
 
-const VISIBLE_ROWS = 6
+const VISIBLE_ROWS = 4
 
 export function BottomActivity({ events, currentTurn, source, onOpenLedger }: BottomActivityProps) {
   const recent = events.slice(0, VISIBLE_ROWS)
@@ -34,37 +34,34 @@ export function BottomActivity({ events, currentTurn, source, onOpenLedger }: Bo
           <div className="log-empty">No events yet. Play a turn to fill the log.</div>
         ) : (
           <ul className="loglist">
-            {recent.map((row) => (
-              <li key={`${row.source}-${row.sequence}-${row.kind}`}>
-                <span className="turncell">T{Math.max(row.turn, 0)}</span>
-                <span style={{ color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-                  {actionLabel(row.kind).toUpperCase()}
-                </span>
-                <span className="text" title={row.text}>
-                  {row.text}
-                </span>
-                <span className="refs" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span
-                    style={{
-                      color:
-                        row.deltaYocto > 0n
-                          ? 'var(--green)'
-                          : row.deltaYocto < 0n
-                            ? 'var(--red)'
-                            : 'var(--ink-3)',
-                    }}
-                  >
-                    {row.deltaYocto === 0n ? '±0 Cr' : formatSignedCredits(row.deltaYocto) + ' Cr'}
+            {recent.map((row) => {
+              const deltaClass =
+                row.deltaYocto > 0n ? 'pos' : row.deltaYocto < 0n ? 'neg' : ''
+              return (
+                <li
+                  className="logrow"
+                  key={`${row.source}-${row.sequence}-${row.kind}`}
+                >
+                  <span className="logrow__turn">T{Math.max(row.turn, 0)}</span>
+                  <span className="logrow__kind">{actionLabel(row.kind)}</span>
+                  <span className="logrow__text" title={row.text}>
+                    {row.text}
+                  </span>
+                  <span className={`logrow__delta ${deltaClass}`}>
+                    {row.deltaYocto === 0n ? '±0' : formatSignedCredits(row.deltaYocto)}
+                    <span className="logrow__cr"> Cr</span>
                   </span>
                   <span
-                    className="source"
-                    title={`Entry ${row.sequence} of the ${row.source === 'model' ? 'local model history' : 'contract ledger'}`}
+                    className="logrow__src"
+                    title={`Entry ${row.sequence} of the ${
+                      row.source === 'model' ? 'local model history' : 'contract ledger'
+                    }`}
                   >
                     {row.source === 'model' ? 'MODEL' : `LEDGER #${row.sequence}`}
                   </span>
-                </span>
-              </li>
-            ))}
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>
@@ -75,48 +72,22 @@ export function BottomActivity({ events, currentTurn, source, onOpenLedger }: Bo
           <span className="value">
             {Math.min(currentTurn - 1, CAMPAIGN_TURNS)} / {CAMPAIGN_TURNS}
           </span>
-          <span style={{ color: 'var(--ink-3)', fontSize: 11, fontWeight: 400 }}>
-            FUTURE TURNS STAY EMPTY — NO PRE-LABELS
-          </span>
+          <span className="timelines__note">future turns are not pre-labelled</span>
         </div>
-        <ol className="timeline-circles" aria-label="Turns">
+        <ol className="turnstrip" aria-label="Turns">
           {Array.from({ length: CAMPAIGN_TURNS }, (_, i) => {
             const turn = i + 1
             const played = turn < currentTurn
             const isCurrent = turn === currentTurn
-            const fill = played ? 'var(--green)' : 'none'
-            const ring = isCurrent ? 'var(--orange)' : played ? 'var(--green)' : 'var(--line)'
-            const glyphColor = played ? '#101416' : isCurrent ? 'var(--orange)' : 'var(--ink-3)'
+            const state = played ? 'done' : isCurrent ? 'now' : 'next'
             return (
               <li
                 key={turn}
+                className={`turnstrip__cell turnstrip__cell--${state}`}
                 aria-current={isCurrent ? 'step' : undefined}
                 aria-label={`Turn ${turn}${played ? ' — played' : isCurrent ? ' — current' : ' — future, empty'}`}
               >
-                <svg width="34" height="34" viewBox="0 0 34 34">
-                  <circle
-                    cx="17"
-                    cy="17"
-                    r="15"
-                    fill={fill}
-                    stroke={ring}
-                    strokeWidth={isCurrent ? 2 : 1.4}
-                  />
-                  {isCurrent ? (
-                    <circle cx="17" cy="17" r="11" fill="none" stroke="var(--bg)" strokeWidth="1" opacity="0.4" />
-                  ) : null}
-                  <text
-                    x="17"
-                    y="21.5"
-                    textAnchor="middle"
-                    fontSize="12"
-                    fill={glyphColor}
-                    fontFamily="IBM Plex Mono, monospace"
-                  >
-                    {turn}
-                  </text>
-                </svg>
-                {turn < CAMPAIGN_TURNS ? <span className="future-line" /> : null}
+                {turn}
               </li>
             )
           })}

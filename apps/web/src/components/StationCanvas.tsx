@@ -75,7 +75,7 @@ const SPOTS: Spot[] = [
     leader: [630, 578],
     target: [545, 490],
     state: (s) => {
-      if (s.repairPaid) return { word: 'STANDBY', color: DIM }
+      if (s.repairPaid) return { word: 'SETTLED', color: DIM }
       if (s.repairApplied) return { word: 'RESTORED', color: '#A7C0AA' }
       if (s.repairSupplier) return { word: 'QUEUED', color: '#D9B96A' }
       return { word: 'STANDBY', color: DIM }
@@ -123,8 +123,16 @@ export function StationCanvas({ snapshot: s, dockedShip, source, banner }: Stati
             const [lx, ly] = spot.leader
             const [tx, ty] = spot.target
             return (
-              <g className="modspot" data-module={spot.id} data-state={st.word} key={spot.id}>
-                {/* translucent focus/hit plate behind the label */}
+              <g
+                className="modspot"
+                data-module={spot.id}
+                data-state={st.word}
+                key={spot.id}
+                tabIndex={0}
+                role="button"
+                aria-label={`${spot.label}: ${st.word}`}
+              >
+                <title>{`${spot.label} — ${st.word}`}</title>
                 <rect
                   x={spot.textX - 10}
                   y={spot.textY - 22}
@@ -141,7 +149,15 @@ export function StationCanvas({ snapshot: s, dockedShip, source, banner }: Stati
                 </text>
                 <line x1={ux} y1={uy} x2={ux + spot.label.length * 8.4 + st.word.length * 8.2 + 34} y2={uy} className="modspot-underline" />
                 <polyline points={`${lx},${ly} ${tx},${ty}`} className="modspot-leader" />
-                <circle cx={tx} cy={ty} r="3.2" className={st.word === 'QUEUED' ? 'modspot-dot queued' : 'modspot-dot'} />
+                {st.word === 'QUEUED' ? (
+                  <circle cx={tx} cy={ty} r="7.5" className="repair-ring" aria-hidden="true" />
+                ) : null}
+                <circle
+                  cx={tx}
+                  cy={ty}
+                  r="3.2"
+                  className={st.word === 'QUEUED' ? 'modspot-dot queued modspot-dot--active' : 'modspot-dot'}
+                />
               </g>
             )
           })}

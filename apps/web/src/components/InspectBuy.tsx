@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { formatCredits, CAMPAIGN_TURNS, CREDIT } from '@derelict/game-model'
 import { creditsOf } from '../lib/contract'
 import type { GameSnapshot } from '../lib/state'
-import { IconWarning } from './icons'
+import { IconClose, IconWarning } from './icons'
+import { useDialogFocus } from './primitives'
 
 export interface InspectBuyProps {
   open: boolean
@@ -33,6 +34,7 @@ export function InspectBuy({
   onBuy,
 }: InspectBuyProps) {
   const [priceDraft, setPriceDraft] = useState('15')
+  const panelRef = useDialogFocus<HTMLDivElement>(open, onClose)
 
   const isCaptain =
     mode === 'practice'
@@ -57,7 +59,10 @@ export function InspectBuy({
       <div
         className="overlay"
         role="dialog"
+        aria-modal="true"
         aria-label="Inspect and buy this station"
+        ref={panelRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="overlay__head">
@@ -68,7 +73,7 @@ export function InspectBuy({
             {mode === 'practice' ? 'PRACTICE SALE — LOCAL MODEL' : 'TESTNET MARKET'} // REV r{snapshot.revision} // EPOCH e{snapshot.epoch}
           </span>
           <button className="iconbtn" onClick={onClose} aria-label="Close inspector" style={{ marginLeft: 'auto' }}>
-            ✕
+            <IconClose size={14} />
           </button>
         </div>
 
@@ -83,7 +88,7 @@ export function InspectBuy({
                 <IconWarning size={14} style={{ marginTop: 2, flex: 'none' }} />
                 <span>{alert.text}</span>
                 <button className="iconbtn alert__close" onClick={onDismissAlert} aria-label="Dismiss">
-                  ✕
+                  <IconClose size={13} />
                 </button>
               </div>
             ) : null}
@@ -182,11 +187,12 @@ export function InspectBuy({
                     : 'Enter a positive whole number of credits.'}
                 </div>
                 <button
-                  className="btn btn--primary btn--block"
+                  className={`btn btn--primary btn--block${confirmBusy ? ' is-busy' : ''}`}
+                  aria-busy={confirmBusy}
                   disabled={!(price > 0) || confirmBusy || (mode === 'testnet' && walletAccount === null)}
                   onClick={() => onListForSale(price)}
                 >
-                  {listed ? `Re-list at ${price} Cr` : 'List for sale'}
+                  {confirmBusy ? 'Submitting…' : listed ? `Re-list at ${price} Cr` : 'List for sale'}
                 </button>
                 {listed ? (
                   <button className="btn btn--danger-ghost btn--block" disabled={confirmBusy} onClick={onUnlist}>
@@ -215,11 +221,12 @@ export function InspectBuy({
                   )}
                 </div>
                 <button
-                  className="btn btn--primary btn--block"
+                  className={`btn btn--primary btn--block${confirmBusy ? ' is-busy' : ''}`}
+                  aria-busy={confirmBusy}
                   disabled={!listed || confirmBusy || (mode === 'testnet' && walletAccount === null)}
                   onClick={onBuy}
                 >
-                  {listingBuyLabel(listed, mode, walletAccount)}
+                  {confirmBusy ? 'Submitting…' : listingBuyLabel(listed, mode, walletAccount)}
                 </button>
                 <div className="pane__note">
                   {mode === 'testnet' && walletAccount === null

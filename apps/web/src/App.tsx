@@ -43,6 +43,7 @@ import { LedgerDrawer } from './components/LedgerDrawer'
 import { InspectBuy } from './components/InspectBuy'
 import { MissionResult } from './components/MissionResult'
 import { Banner } from './components/primitives'
+import { IconClose } from './components/icons'
 
 type Mode = 'practice' | 'testnet'
 type TxKind = 'act' | 'list' | 'unlist' | 'purchase'
@@ -560,6 +561,18 @@ export function App(): JSX.Element {
 
   const showResult = snapshot?.outcome.complete === true && !resultDismissed
 
+  /** Shared by the mission-result overlay and the decision rail's ended state. */
+  const startFreshRun = () => {
+    clearPractice()
+    setPractice(freshPractice())
+    setResultDismissed(false)
+    setBanner({
+      tone: 'ok',
+      text: 'New practice run: 10 Cr operating, fuel 4, hull 2.',
+      detail: 'serves six fresh visitor offers',
+    })
+  }
+
   /* ------------------------------------------------------------------ */
   /* Render                                                              */
   /* ------------------------------------------------------------------ */
@@ -573,10 +586,15 @@ export function App(): JSX.Element {
             {chainError}
           </span>
         ) : null}
-        {isTestnet && chainError ? (
-          <button className="btn" onClick={() => setMode('practice')}>
-            Back to practice
-          </button>
+        {isTestnet ? (
+          <>
+            <span style={{ color: 'var(--ink-3)', fontSize: 12 }}>
+              A slow RPC read can take a moment — practice stays available.
+            </span>
+            <button className="btn btn--quiet" onClick={() => setMode('practice')}>
+              Back to practice
+            </button>
+          </>
         ) : null}
       </div>
     )
@@ -628,6 +646,8 @@ export function App(): JSX.Element {
           walletConnected={walletAccount !== null}
           onConfirm={confirm}
           onConnectWallet={connectWallet}
+          onStartFreshRun={startFreshRun}
+          onBackToPractice={() => switchMode('practice')}
         />
       </div>
 
@@ -636,7 +656,7 @@ export function App(): JSX.Element {
           <div className={`alert${message.tone === 'error' ? ' alert--error' : ' alert--info'}`} role="alert">
             <span>{message.text}</span>
             <button className="iconbtn alert__close" onClick={() => setMessage(null)} aria-label="Dismiss message">
-              ✕
+              <IconClose size={13} />
             </button>
           </div>
         </div>
@@ -676,12 +696,7 @@ export function App(): JSX.Element {
           events={rows}
           source={isTestnet ? 'chain' : 'model'}
           walletAccount={walletAccount}
-          onNewPracticeRun={() => {
-            clearPractice()
-            setPractice(freshPractice())
-            setResultDismissed(false)
-            setBanner({ tone: 'ok', text: 'New practice run: 10 Cr operating, fuel 4, hull 2.', detail: 'serves six fresh visitor offers' })
-          }}
+          onNewPracticeRun={startFreshRun}
           onClose={() => setResultDismissed(true)}
         />
       ) : null}

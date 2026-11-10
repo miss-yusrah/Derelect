@@ -6,6 +6,8 @@ import {
   type LedgerFilter,
   type LedgerRow,
 } from '../lib/state'
+import { IconClose } from './icons'
+import { useDialogFocus } from './primitives'
 
 export interface LedgerDrawerProps {
   open: boolean
@@ -23,6 +25,7 @@ const FILTERS: Array<{ id: LedgerFilter; label: string }> = [
 
 export function LedgerDrawer({ open, onClose, rows, stationAccount }: LedgerDrawerProps) {
   const [filter, setFilter] = useState<LedgerFilter>('all')
+  const panelRef = useDialogFocus<HTMLElement>(open, onClose)
 
   const visible = useMemo(() => {
     return rows.filter((row) => filter === 'all' || ledgerKindOf(row.kind) === filter)
@@ -32,7 +35,7 @@ export function LedgerDrawer({ open, onClose, rows, stationAccount }: LedgerDraw
   return (
     <>
       <div className="drawer-scrim" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-label="Station ledger">
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label="Station ledger" ref={panelRef} tabIndex={-1}>
         <div className="drawer__head">
           <div>
             <div className="drawer__title">LEDGER</div>
@@ -42,7 +45,7 @@ export function LedgerDrawer({ open, onClose, rows, stationAccount }: LedgerDraw
             </div>
           </div>
           <button className="iconbtn" onClick={onClose} aria-label="Close ledger" style={{ marginLeft: 'auto' }}>
-            ✕
+            <IconClose size={14} />
           </button>
         </div>
         <div className="drawer__filters" role="tablist" aria-label="Ledger filters">

@@ -10,6 +10,7 @@ import {
   STANDARD_FEE_UPGRADED,
   UPGRADE_COST,
   FUEL_CAPACITY,
+  HULL_CAPACITY,
   type ActionKind,
   type ActionPreview,
   type StationState,
@@ -30,6 +31,10 @@ export interface DecisionRailProps {
   walletConnected: boolean
   onConfirm: (action: ActionKind) => void
   onConnectWallet: () => void
+  /** Practice mode: wipe the local run and start a fresh six-turn campaign. */
+  onStartFreshRun?: () => void
+  /** Testnet mode: leave the settled campaign and return to practice. */
+  onBackToPractice?: () => void
 }
 
 interface RowDef {
@@ -130,6 +135,8 @@ export function DecisionRail({
   walletConnected,
   onConfirm,
   onConnectWallet,
+  onStartFreshRun,
+  onBackToPractice,
 }: DecisionRailProps) {
   const [selectedKind, setSelectedKind] = useState<ActionKind['kind']>('standardDocking')
   const [refuelUnits, setRefuelUnits] = useState(2)
@@ -207,17 +214,74 @@ export function DecisionRail({
         <IconLedger size={15} />
         DECISION RAIL
         <span className="spacer" />
-        <span className="evidence" style={{ letterSpacing: '0.1em' }}>
-          TURN {Math.min(snapshot.turn, 6)} / 6
-        </span>
+        {confirmBusy ? (
+          <span className="rail-right__pending" role="status">
+            SUBMITTED · AWAITING READ-BACK
+          </span>
+        ) : (
+          <span className="evidence" style={{ letterSpacing: '0.1em' }}>
+            TURN {Math.min(snapshot.turn, 6)} / 6
+          </span>
+        )}
       </div>
 
       {snapshot.complete ? (
-        <div className="pane">
-          <div className="pane__desc">
-            Campaign complete. The bridge is closed; the mission result holds
-            this station's final operating treasury.
+        <div className="endpanel" aria-label="Campaign result summary">
+          <div
+            className={`endpanel__verdict${
+              snapshot.outcome.success ? ' endpanel__verdict--win' : ' endpanel__verdict--fail'
+            }`}
+          >
+            {snapshot.outcome.success ? 'SALVAGE SUCCESSFUL' : 'STATION LOST'}
           </div>
+          <div className="endpanel__reason">{snapshot.outcome.reason ?? 'Six turns complete.'}</div>
+          <dl className="endpanel__stats">
+            <div>
+              <dt>FINAL TREASURY</dt>
+              <dd>
+                {formatCredits(snapshot.operatingYocto)}
+                <span className="unit"> Cr</span>
+              </dd>
+            </div>
+            <div>
+              <dt>SHIPS SERVED</dt>
+              <dd>
+                {snapshot.served}
+                <span className="unit"> / 3</span>
+              </dd>
+            </div>
+            <div>
+              <dt>HULL</dt>
+              <dd>
+                {snapshot.hull}
+                <span className="unit"> / {HULL_CAPACITY}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>FUEL</dt>
+              <dd>
+                {snapshot.fuel}
+                <span className="unit"> / {FUEL_CAPACITY}</span>
+              </dd>
+            </div>
+          </dl>
+          {mode === 'practice' ? (
+            onStartFreshRun ? (
+              <button className="btn btn--primary btn--block" onClick={onStartFreshRun}>
+                Start fresh run
+              </button>
+            ) : null
+          ) : onBackToPractice ? (
+            <>
+              <div className="pane__note">
+                This campaign is settled on chain — the station keeps its final
+                treasury and creditor claims.
+              </div>
+              <button className="btn btn--block" onClick={onBackToPractice}>
+                Back to practice
+              </button>
+            </>
+          ) : null}
         </div>
       ) : (
         <>
@@ -252,10 +316,6 @@ export function DecisionRail({
 
           <div className="pane" aria-live="polite">
             <div className="pane__preview-tag">PREVIEW — UNTIL YOU CONFIRM</div>
-            <div className="pane__desc" style={{ color: 'var(--ink)', fontWeight: 500 }}>
-              {selectedDef.title.toUpperCase()}
-              {selectedKind === 'refuel' ? ` ${refuelUnits} UNITS` : ''}
-            </div>
             <div className="pane__desc">{selectedDef.desc(previewState)}</div>
 
             {selectedKind === 'refuel' ? (
@@ -294,8 +354,9 @@ export function DecisionRail({
             {preview.ok ? (
               <div className="pane__cost">
                 <span>{preview.text}</span>
-                <span style={{ display: 'block', marginTop: 6, color: 'var(--ink-3)', fontSize: 11 }}>
-                  EFFECT — fuel {fmtDelta(preview.fuelDelta)} · hull {fmtDelta(preview.hullDelta)} · ships served {preview.turnsPlayed > 0 ? '+1' : '+0'}
+                <span className="pane__effect">
+                  EFFECT · fuel {fmtDelta(preview.fuelDelta)} · hull {fmtDelta(preview.hullDelta)} · served{' '}
+                  {preview.turnsPlayed > 0 ? '+1' : '+0'}
                 </span>
               </div>
             ) : (
@@ -305,10 +366,10 @@ export function DecisionRail({
               </div>
             )}
 
-            <div style={{ display: 'grid', gap: 'var(--sp-2)' }}>
+            <div style={{ display: 'grid', gap: 6 }}>
               {mode === 'practice' || walletConnected ? (
                 <button
-                  className="btn btn--primary btn--block"
+                  className={`btn btn--primary btn--block${confirmBusy ? ' is-busy' : ''}`}
                   disabled={!preview.ok || confirmBusy}
                   onClick={() => onConfirm(selected)}
                 >
@@ -320,23 +381,21 @@ export function DecisionRail({
                 </button>
               )}
               {mode === 'practice' ? (
-                <div className="pane__note">
-                  Practice applies instantly through the local deterministic model —
-                  exactly the rules the contract enforces on testnet.
-                </div>
+                <div className="pane__note">Practice — local model, same rules, instant.</div>
               ) : (
                 <div className="pane__note">
-                  Confirm sends <span style={{ fontFamily: 'var(--font-mono)' }}>act(action, expected_revision)</span>
-                  {' '}with a revision freshly read from RPC. Fuel, hull and funds
-                  update only when the chain read-back confirms.
+                  Signs <span style={{ fontFamily: 'var(--font-mono)' }}>act(action, expected_revision)</span>
+                  {' '}— state updates only after the chain read-back.
                 </div>
               )}
             </div>
           </div>
 
-          <div className="evidence">
-            <OfferLine offer={standardOffer} kind="STANDARD" />
-            <OfferLine offer={heavyOffer} kind="HEAVY" />
+          <div className="evidence" aria-label="Visitor offers in the dock queue">
+            <span className="evidence__line" title={queueTitle(standardOffer, heavyOffer)}>
+              <b>DOCK QUEUE</b>
+              {` · ${queueText(standardOffer, 'STD')} · ${queueText(heavyOffer, 'HEAVY')}`}
+            </span>
           </div>
         </>
       )}
@@ -344,16 +403,14 @@ export function DecisionRail({
   )
 }
 
-function OfferLine({ offer, kind }: { offer: Offer | null; kind: string }) {
-  return (
-    <span style={{ display: 'block' }}>
-      {offer ? (
-        <>
-          <b>{`NEXT ${kind} OFFER: #${offer.id}`}</b> ESCROW {formatCredits(offer.escrowYocto)} CR / {offer.payer}
-        </>
-      ) : (
-        <b>{`NO ${kind} OFFER FUNDED`}</b>
-      )}
-    </span>
-  )
+function queueText(offer: Offer | null, kind: string): string {
+  return offer ? `${kind} #${offer.id} ${formatCredits(offer.escrowYocto)} CR` : `NO ${kind}`
+}
+
+function queueTitle(standard: Offer | null, heavy: Offer | null): string {
+  const describe = (offer: Offer | null, kind: string) =>
+    offer
+      ? `next ${kind} offer #${offer.id} — ${formatCredits(offer.escrowYocto)} Cr escrow from ${offer.payer}`
+      : `no ${kind} offer funded`
+  return `${describe(standard, 'standard')}; ${describe(heavy, 'heavy')}`
 }

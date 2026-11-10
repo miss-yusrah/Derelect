@@ -3,7 +3,6 @@ import { formatCredits } from '@derelict/game-model'
 import { FUEL_CAPACITY, HULL_CAPACITY } from '@derelict/game-model'
 import { IconCredits, IconFuel, IconHull, IconLock } from './icons'
 import { Gauge, StatRow } from './primitives'
-import { PRACTICE_BUYER } from '../config'
 
 export interface StatusRailProps {
   snapshot: GameSnapshot
@@ -19,13 +18,12 @@ export function StatusRail({ snapshot, source, fuelFlashCell = null }: StatusRai
     : 'ON-GRID // ORBITAL SALVAGE'
 
   const operating = formatCredits(snapshot.operatingYocto)
-  const reserved = snapshot.repairDueTurn !== null && !snapshot.repairPaid
-    ? 4000000000000000000000n
-    : 0n
+  const repairHeld = snapshot.repairDueTurn !== null && !snapshot.repairPaid
+  const reserved = repairHeld ? 4000000000000000000000n : 0n
 
   return (
     <aside className="rail-left" aria-label="Station status">
-      <div>
+      <div className="rail-left__ident">
         <div className="rail-left__title">STATION</div>
         <div className="rail-left__name">
           {stationNameFrom(snapshot)}
@@ -33,37 +31,53 @@ export function StatusRail({ snapshot, source, fuelFlashCell = null }: StatusRai
         </div>
       </div>
 
-      <Gauge
-        icon={<IconFuel size={17} />}
-        label="FUEL"
-        value={String(snapshot.fuel)}
-        cells={snapshot.fuel}
-        cellCount={FUEL_CAPACITY}
-        flashIndex={fuelFlashCell}
-        danger={snapshot.fuel <= 1}
-      />
-      <Gauge
-        icon={<IconHull size={17} />}
-        label="HULL"
-        value={String(snapshot.hull)}
-        cells={snapshot.hull}
-        cellCount={HULL_CAPACITY}
-        danger={snapshot.hull === 1}
-      />
-
-      <div>
-        <StatRow
-          icon={<IconCredits size={17} />}
-          label="OPERATING"
-          amount={operating}
-          unit="Cr"
-          title="Unprotected operating funds (station money; the score)"
+      {/* Primary readouts: the numbers a captain glances at every turn. */}
+      <section className="rail-left__primary" aria-label="Primary resources and funds">
+        <Gauge
+          icon={<IconFuel size={16} />}
+          label="FUEL"
+          value={String(snapshot.fuel)}
+          cells={snapshot.fuel}
+          cellCount={FUEL_CAPACITY}
+          flashIndex={fuelFlashCell}
+          danger={snapshot.fuel <= 1}
         />
+        <Gauge
+          icon={<IconHull size={16} />}
+          label="HULL"
+          value={String(snapshot.hull)}
+          cells={snapshot.hull}
+          cellCount={HULL_CAPACITY}
+          danger={snapshot.hull === 1}
+        />
+        <div className="score" title="Unprotected operating funds (station money; the score)">
+          <span className="score__label">
+            <IconCredits size={15} />
+            OPERATING FUNDS
+          </span>
+          <span className="score__value" aria-label={`${operating} credits operating`}>
+            {operating}
+            <span className="score__unit"> Cr</span>
+          </span>
+          <span className="score__note">THE SCORE — SPENDABLE STATION MONEY</span>
+        </div>
+      </section>
+
+      {/* Secondary: protected money the captain cannot freely spend. */}
+      <section className="rail-left__secondary" aria-label="Protected and escrowed funds">
         <StatRow
-          icon={<IconLock size={17} />}
+          icon={<IconLock size={14} />}
           label="PROTECTED REPAIR"
           amount={formatCredits(reserved)}
           unit="Cr"
+          active={repairHeld}
+          hint={
+            repairHeld
+              ? snapshot.repairApplied
+                ? 'hull restored · claim live'
+                : `lands after T${snapshot.repairDueTurn}`
+              : undefined
+          }
           title="Reserved for the commissioned repair; creditors keep their claim"
         />
         <StatRow
@@ -73,14 +87,15 @@ export function StatusRail({ snapshot, source, fuelFlashCell = null }: StatusRai
           unit="Cr"
           title="Prepaid offers held for visiting ships"
         />
-      </div>
+      </section>
 
+      {/* Tertiary: identity and ledger coordinates. */}
       <div className="rail-left__captain">
         <span className="k">CAPTAIN (NFT OWNER)</span>
         <span className="v" title={snapshot.owner}>
           {snapshot.owner}
         </span>
-        <span className="k">EP / REV</span>
+        <span className="k">EPOCH / REVISION</span>
         <span className="v">
           e{snapshot.epoch} r{snapshot.revision}
         </span>
@@ -91,9 +106,8 @@ export function StatusRail({ snapshot, source, fuelFlashCell = null }: StatusRai
       <div className="rail-left__meta" aria-hidden>
         {stationTag}
         {'\n'}
-        SALVAGE {'//'} REPAIR {'//'} TRADE{'\n'}
         1 CR = 0.001 NEAR{'\n'}
-        {isPractice ? `PRACTICE SELLER ${PRACTICE_BUYER}` : `BLOCK #{CHAIN}`}
+        {isPractice ? 'PRACTICE — NO CHAIN STATE' : `EPOCH ${snapshot.epoch} · CAMPAIGN ${snapshot.campaignId}`}
       </div>
     </aside>
   )

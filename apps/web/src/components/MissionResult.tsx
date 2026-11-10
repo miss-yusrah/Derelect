@@ -1,8 +1,9 @@
 import { formatCredits } from '@derelict/game-model'
-import { CREDIT } from '@derelict/game-model'
+import { CREDIT, HULL_CAPACITY } from '@derelict/game-model'
 import type { GameSnapshot, LedgerRow } from '../lib/state'
 import { actionLabel } from '../lib/state'
 import { GAMEPLAY_KINDS } from '../lib/state'
+import { useDialogFocus } from './primitives'
 
 export interface MissionResultProps {
   snapshot: GameSnapshot
@@ -22,6 +23,7 @@ export function MissionResult({
   onClose,
 }: MissionResultProps) {
   const outcome = snapshot.outcome
+  const panelRef = useDialogFocus<HTMLDivElement>(outcome.complete, onClose)
   if (!outcome.complete) return null
 
   const success = outcome.success
@@ -36,8 +38,8 @@ export function MissionResult({
   const history = turnTable(events)
 
   return (
-    <div className="result-scrim" role="dialog" aria-label="Mission result">
-      <div className="result">
+    <div className="result-scrim" role="dialog" aria-modal="true" aria-label="Mission result">
+      <div className="result" role="document" ref={panelRef} tabIndex={-1}>
         <div className={`result__header ${success ? 'result__header--win' : 'result__header--fail'}`}>
           {success ? 'SALVAGE SUCCESSFUL' : 'STATION RECLAIMED BY RUST'}
         </div>
@@ -45,7 +47,7 @@ export function MissionResult({
           REASON: {reasonText}
           <span style={{ color: 'var(--ink-3)' }}>
             {' '}
-            — {snapshot.served} ships served · hull {snapshot.hull} / 3 · captain {walletAccount ?? snapshot.owner} ·{' '}
+            — {snapshot.served} ships served · hull {snapshot.hull} / {HULL_CAPACITY} · captain {walletAccount ?? snapshot.owner} ·{' '}
             {source === 'model' ? 'practice ledger' : 'chain ledger'}
           </span>
         </div>
@@ -102,9 +104,14 @@ export function MissionResult({
 
         <div className="result__actions">
           {source === 'model' ? (
-            <button className="btn btn--primary" onClick={onNewPracticeRun}>
-              New practice run
-            </button>
+            <>
+              <button className="btn btn--primary" onClick={onNewPracticeRun}>
+                New practice run
+              </button>
+              <button className="btn btn--quiet" onClick={onClose}>
+                Back to bridge
+              </button>
+            </>
           ) : (
             <button className="btn" onClick={onClose}>
               Back to bridge

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { formatCredits, formatSignedCredits } from '@derelict/game-model'
 import { IconClose, IconHazard } from './icons'
 
@@ -17,44 +17,34 @@ export function creditDeltaClass(yoctoValue: bigint): string {
 
 /* ------------------------------------------------------------------ */
 
-export interface ChipProps {
-  variant: 'practice' | 'testnet' | 'disconnected' | 'pending'
-  active?: boolean
-  label: string
-  detail?: string
-  title?: string
-  onClick?: () => void
-  locked?: boolean
-}
+/**
+ * Dialog behavior shared by the ledger drawer and the inspect/buy overlay:
+ * Escape closes, focus moves into the panel on open and back to whatever
+ * launched it on close. Presentation-only; no logic changes.
+ */
+export function useDialogFocus<T extends HTMLElement = HTMLDivElement>(
+  open: boolean,
+  onClose: () => void,
+): React.RefObject<T> {
+  const panelRef = useRef<T>(null)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
 
-export function Chip({ variant, active = false, label, detail, title, onClick, locked }: ChipProps) {
-  const cls =
-    variant === 'practice'
-      ? 'chip chip--practice'
-      : variant === 'testnet'
-        ? 'chip chip--testnet'
-        : variant === 'pending'
-          ? 'chip chip--pending'
-          : 'chip chip--disconnected'
-  const interactive = Boolean(onClick)
-  const Tag = interactive ? 'button' : 'span'
-  return (
-    <Tag
-      className={`${cls}${active ? ' chip--active' : ''}${interactive ? ' chip--click' : ''}`}
-      onClick={onClick}
-      title={title ?? detail}
-      disabled={interactive ? undefined : undefined}
-    >
-      {variant === 'pending' ? <span className="chip__dot" /> : null}
-      {variant === 'disconnected' && locked ? <span className="chip__lock" /> : null}
-      <span>{label}</span>
-      {detail ? (
-        <span style={{ color: 'var(--ink-3)', fontWeight: 400, letterSpacing: '0.04em' }}>
-          {detail}
-        </span>
-      ) : null}
-    </Tag>
-  )
+  useEffect(() => {
+    if (!open) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    panelRef.current?.focus()
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      if (previous && document.body.contains(previous)) previous.focus()
+    }
+  }, [open])
+
+  return panelRef
 }
 
 /* ------------------------------------------------------------------ */
@@ -71,13 +61,17 @@ export interface GaugeProps {
 
 export function Gauge({ icon, label, value, cells, cellCount, flashIndex = null, danger }: GaugeProps) {
   return (
-    <div className="gauge" role="img" aria-label={`${label} ${value} of ${cellCount}`}>
+    <div
+      className={`gauge${danger ? ' gauge--danger' : ''}`}
+      role="img"
+      aria-label={`${label} ${value} of ${cellCount}`}
+    >
       <div className="gauge__head">
         {icon}
         <span>{label}</span>
         <span className={`gauge__value${danger ? ' state-red' : ''}`}>
           <span>{value}</span>
-          <span style={{ color: 'var(--ink-3)' }}> / {cellCount}</span>
+          <span style={{ color: 'var(--ink-3)', fontSize: '12px' }}> / {cellCount}</span>
         </span>
       </div>
       <div className="gauge__bar">
@@ -106,11 +100,15 @@ export interface StatRowProps {
   amount: string
   unit?: string
   title?: string
+  /** Highlights the row as an active obligation (e.g. repair in flight). */
+  active?: boolean
+  /** Small right-aligned status line under the amount. */
+  hint?: string
 }
 
-export function StatRow({ icon, label, amount, unit, title }: StatRowProps) {
+export function StatRow({ icon, label, amount, unit, title, active = false, hint }: StatRowProps) {
   return (
-    <div className="statrow" title={title}>
+    <div className={`statrow${active ? ' statrow--active' : ''}`} title={title}>
       <span className="statrow__label">
         {icon}
         {label}
@@ -118,6 +116,7 @@ export function StatRow({ icon, label, amount, unit, title }: StatRowProps) {
       <span className="statrow__amount">
         {amount}
         {unit ? <span className="statrow__unit">{unit}</span> : null}
+        {hint ? <span className="statrow__hint">{hint}</span> : null}
       </span>
     </div>
   )
