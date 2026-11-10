@@ -24,3 +24,9 @@ neardev/
 .DS_Store
 coverage/
 *.log
+
+# Local-only working material (kept on disk, not published)
+scripts/
+design/
+docs/screenshots/
+DERELICT-PLAN.md

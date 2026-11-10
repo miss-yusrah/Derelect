@@ -16,7 +16,7 @@ supplier's claim.
 > inherits the station's condition, and the original repair supplier still
 > gets paid."*
 
-![DERELICT station interface concept](design/derelict-station-concept.png)
+![DERELICT station](apps/web/src/assets/station-illustration.png)
 
 ## Start the live station (NEAR testnet)
 
@@ -47,7 +47,7 @@ the contract. Pending stays pending until the chain confirms.
 ```bash
 cargo test -p derelict-station        # 18 contract unit tests
 cd tests/integration && cargo test    # 4 sandbox tests incl. the full judging scenario
-node scripts/check-parity.mjs         # published strategies: 26.000 / 27.000 credits
+pnpm --filter @derelict/game-model test   # published strategies: 26.000 / 27.000 credits
 ```
 
 The integration test `full_judging_repair_route_with_midrepair_sale` runs the
@@ -63,9 +63,7 @@ contracts/factory/        Station deployment and discovery index
 apps/web/                 Game interface and wallet integration
 packages/game-model/      Pure transition model, fixtures, previews
 tests/integration/        near-workspaces sandbox scenario tests
-scripts/                  Build, test, deploy, fresh-demo commands
 docs/                     Architecture, frozen rules, judge's guide, threat model
-design/                   Concept art and image-generation record
 ```
 
 ## Playing turns (rules in one look)

@@ -32,7 +32,7 @@
 git clone <repo> && cd Derelect
 pnpm install
 pnpm --filter @derelict/game-model build
-node scripts/check-parity.mjs     # published strategies verify (26 / 27 Cr)
+pnpm --filter @derelict/game-model test   # published strategies verify (26 / 27 Cr)
 cargo test -p derelict-station    # 18 unit tests incl. mid-repair sale scenario
 pnpm --filter derelict-web dev    # connect a NEAR testnet wallet to play
 ```
