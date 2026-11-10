@@ -8,10 +8,11 @@ const here = dirname(fileURLToPath(import.meta.url))
 const require_ = createRequire(import.meta.url)
 
 /**
- * NEAR libraries are OPTIONAL at build time: when a package is present Vite
- * resolves it normally; when missing we alias the bare specifier onto a local
- * stub so the build and the guarded dynamic imports in src/lib/near.ts keep
- * working (the UI reports that wallet signing is unavailable).
+ * The NEAR wallet connector is OPTIONAL at build time: when the package is
+ * present Vite resolves it normally; when missing we alias the bare specifier
+ * onto a local stub so the build and the guarded dynamic import in
+ * src/lib/near.ts keep working (the UI reports that wallet signing is
+ * unavailable).
  */
 function probe(id: string): boolean {
   try {
@@ -28,12 +29,6 @@ const resolveEntries: Array<{ find: string | RegExp; replacement: string }> = [
   // Alias @derelict/game-model to its TS source so HMR and tsc share one truth.
   { find: '@derelict/game-model', replacement: gameModelEntry },
 ]
-if (!probe('near-api-js')) {
-  resolveEntries.push({
-    find: /^near-api-js$/,
-    replacement: resolve(here, 'src/vendor/near-api-js-stub.js'),
-  })
-}
 if (!probe('@hot-labs/near-connect')) {
   resolveEntries.push({
     find: /^@hot-labs\/near-connect$/,
@@ -46,7 +41,6 @@ export default defineConfig((): UserConfig => ({
   base: process.env.VITE_BASE || '/',
   resolve: { alias: resolveEntries },
   define: {
-    __DERELICT_NEAR_API__: JSON.stringify(probe('near-api-js')),
     __DERELICT_NEAR_CONNECT__: JSON.stringify(probe('@hot-labs/near-connect')),
   },
   build: {

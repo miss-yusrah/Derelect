@@ -20,7 +20,6 @@
     "paths": {
       "@derelict/game-model": ["../../packages/game-model/src/index.ts"],
       "@derelict/game-model/*": ["../../packages/game-model/src/*"],
-      "near-api-js": ["./src/types/vendor-near-api-js.d.ts"],
       "@hot-labs/near-connect": ["./src/types/vendor-near-connect.d.ts"]
     }
   },

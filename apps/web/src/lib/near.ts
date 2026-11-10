@@ -61,8 +61,7 @@ export async function loadNearRuntime(): Promise<NearRuntime | null> {
 }
 
 async function buildRuntime(): Promise<NearRuntime> {
-  // Views use a dependency-free failover fetch: CORS-verified in-browser and
-  // free of near-api-js v6 provider quirks.
+  // Views use a dependency-free failover fetch, CORS-verified in-browser.
   const view = makeFetchView()
 
   let connector: NearConnector | null = null

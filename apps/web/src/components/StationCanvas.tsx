@@ -166,7 +166,7 @@ export function StationCanvas({ snapshot: s, dockedShip, banner }: StationCanvas
 
       <div className="station-canvas-registries" aria-hidden="true">
         <span className="registry-left">CHAIN VIEW // 1 CR = 10^21 YOCTO</span>
-        <span className="registry-right">STATION ART — DERELICT CONCEPT (design/image-generation.json)</span>
+        <span className="registry-right">STATION ART — DERELICT CONCEPT</span>
       </div>
 
       {banner && <div className="station-canvas-banner">{banner}</div>}
