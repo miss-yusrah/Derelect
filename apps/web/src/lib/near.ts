@@ -21,14 +21,19 @@ import type {
 
 export type { NearConnectAction, NearExecutionOutcome }
 
-export interface SignAndSendInput {
-  receiverId: string
+export interface FunctionCallInput {
   methodName: string
   args: Record<string, unknown>
   /** Gas in gas units, string form (e.g. "30000000000000" = 30 TGas). */
   gas: string
   /** Attached deposit in yoctoNEAR, string form. */
   deposit: string
+}
+
+/** One transaction: every call runs in order against the same receiver. */
+export interface SignAndSendInput {
+  receiverId: string
+  calls: FunctionCallInput[]
 }
 
 export interface DerelictWallet {
@@ -40,6 +45,8 @@ export interface DerelictWallet {
 export interface NearRuntime {
   /** View (read-only, no keys) call on any contract account. */
   view<T>(contractId: string, methodName: string, args: Record<string, unknown>): Promise<T>
+  /** Liquid balance in yoctoNEAR, or null when the account does not exist. */
+  accountBalance(accountId: string): Promise<bigint | null>
   /** True when the wallet connector library itself is available. */
   walletLibraryAvailable: boolean
   /** Restore an existing popup-wallet session (no popup). Memoized. */
@@ -62,7 +69,7 @@ export async function loadNearRuntime(): Promise<NearRuntime | null> {
 
 async function buildRuntime(): Promise<NearRuntime> {
   // Views use a dependency-free failover fetch, CORS-verified in-browser.
-  const view = makeFetchView()
+  const { view, accountBalance } = makeFetchRpc()
 
   let connector: NearConnector | null = null
   try {
@@ -97,17 +104,7 @@ async function buildRuntime(): Promise<NearRuntime> {
         wallet.signAndSendTransaction({
           signerId: who,
           receiverId: input.receiverId,
-          actions: [
-            {
-              type: 'FunctionCall',
-              params: {
-                methodName: input.methodName,
-                args: input.args,
-                gas: input.gas,
-                deposit: input.deposit,
-              },
-            },
-          ],
+          actions: input.calls.map((params) => ({ type: 'FunctionCall', params })),
         }),
       disconnect: async () => {
         await connector.disconnect(wallet)
@@ -154,6 +151,7 @@ async function buildRuntime(): Promise<NearRuntime> {
 
   return {
     view,
+    accountBalance,
     walletLibraryAvailable: connector !== null,
     getWallet,
     connectWallet,
@@ -163,11 +161,23 @@ async function buildRuntime(): Promise<NearRuntime> {
 
 interface RpcError {
   message?: string
-  cause?: { message?: string }
+  data?: unknown
+  cause?: { name?: string; message?: string }
 }
 
-/** Minimal JSON-RPC view implementation with endpoint failover (no deps). */
-function makeFetchView(): NearRuntime['view'] {
+/** JSON-RPC failure; `causeName` is the node's error kind, e.g. UNKNOWN_ACCOUNT. */
+class RpcFailure extends Error {
+  constructor(
+    message: string,
+    readonly causeName: string | undefined,
+  ) {
+    super(message)
+    this.name = 'RpcFailure'
+  }
+}
+
+/** Minimal JSON-RPC client with endpoint failover (no deps). */
+function makeFetchRpc(): Pick<NearRuntime, 'view' | 'accountBalance'> {
   let index = 0
 
   async function rpcCall<T>(body: Record<string, unknown>): Promise<T> {
@@ -184,7 +194,12 @@ function makeFetchView(): NearRuntime['view'] {
         const payload = json.result ?? json
         const fail = (payload as { error?: RpcError }).error
         if (fail) {
-          throw new Error(fail.cause?.message ?? fail.message ?? `RPC error (${JSON.stringify(fail).slice(0, 120)})`)
+          const text =
+            fail.cause?.message ??
+            (typeof fail.data === 'string' ? fail.data : undefined) ??
+            fail.message ??
+            `RPC error (${JSON.stringify(fail).slice(0, 120)})`
+          throw new RpcFailure(text, fail.cause?.name)
         }
         index = (index + attempt) % RPC_ENDPOINTS.length
         return payload as T
@@ -196,7 +211,20 @@ function makeFetchView(): NearRuntime['view'] {
     throw lastError instanceof Error ? lastError : new Error(String(lastError))
   }
 
-  return async <T,>(contractId: string, methodName: string, args: Record<string, unknown>): Promise<T> => {
+  async function accountBalance(accountId: string): Promise<bigint | null> {
+    try {
+      const account = await rpcCall<{ amount: string }>({
+        method: 'query',
+        params: { request_type: 'view_account', finality: 'final', account_id: accountId },
+      })
+      return BigInt(account.amount)
+    } catch (error) {
+      if (error instanceof RpcFailure && error.causeName === 'UNKNOWN_ACCOUNT') return null
+      throw error
+    }
+  }
+
+  async function view<T>(contractId: string, methodName: string, args: Record<string, unknown>): Promise<T> {
     // The query result carries the view's return value as UTF-8 bytes.
     const callResult = await rpcCall<{ result?: number[] }>({
       method: 'query',
@@ -214,4 +242,6 @@ function makeFetchView(): NearRuntime['view'] {
     }
     return JSON.parse(new TextDecoder().decode(new Uint8Array(bytes))) as T
   }
+
+  return { view, accountBalance }
 }

@@ -17,6 +17,14 @@ import {
   type GameSnapshot,
   type LedgerRow,
 } from './lib/state'
+import {
+  TRAFFIC_KINDS,
+  createStation,
+  stationAccountFor,
+  stationsLaunchedBy,
+  suggestStationName,
+  type StationInfo,
+} from './lib/factory'
 import { STATION_ACCOUNT } from './config'
 import { Header } from './components/Header'
 import { StatusRail } from './components/StatusRail'
@@ -26,10 +34,11 @@ import { BottomActivity } from './components/BottomActivity'
 import { LedgerDrawer } from './components/LedgerDrawer'
 import { InspectBuy } from './components/InspectBuy'
 import { MissionResult } from './components/MissionResult'
+import { LaunchStation, type LaunchStep } from './components/LaunchStation'
 import { Banner } from './components/primitives'
 import { IconClose } from './components/icons'
 
-type TxKind = 'act' | 'list' | 'unlist' | 'purchase' | 'claimRepair'
+type TxKind = 'act' | 'list' | 'unlist' | 'purchase' | 'claimRepair' | 'seed'
 
 interface BannerState {
   tone: 'error' | 'info' | 'ok' | 'neutral'
@@ -61,6 +70,23 @@ interface TxSpec {
   settledBanner?: (ctx: TxContext) => BannerState
 }
 
+/** Read everything the bridge shows for one station (contract views only). */
+async function loadView(runtime: NearRuntime, account: string): Promise<ChainView> {
+  const contract = await getStationContract(account, runtime)
+  const [state, offers, ledger, buckets] = await Promise.all([
+    contract.viewState(),
+    contract.viewOffers(),
+    contract.viewLedger(0, 700),
+    contract.viewBuckets(),
+  ])
+  return {
+    snapshot: snapshotFromChain(state, buckets),
+    offers: offers.map(chainOfferToModel),
+    rows: ledgerRowsFromChain(ledger),
+    blockHeight: state.block_height,
+  }
+}
+
 function assertCaptain(state: ChainState, accountId: string): void {
   if (state.owner !== accountId) {
     throw new Error(
@@ -82,12 +108,14 @@ function errorText(error: unknown): string {
 }
 
 export function App(): JSX.Element {
-  // Jump link for recordings: ?station=<account> (defaults to config.json).
-  const [stationAccount] = useState(
+  // Station on screen: ?station=<account> (defaults to config.json). The ref
+  // lets async reads drop results for a station that is no longer shown.
+  const [stationAccount, setStationAccount] = useState(
     () =>
       new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('station') ||
       STATION_ACCOUNT,
   )
+  const stationRef = useRef(stationAccount)
 
   // NEAR runtime: isolated wallet/RPC library state.
   const runtimeRef = useRef<NearRuntime | null>(null)
@@ -109,6 +137,12 @@ export function App(): JSX.Element {
   const [ledgerOpen, setLedgerOpen] = useState(false)
   const [inspectOpen, setInspectOpen] = useState(false)
   const [resultDismissed, setResultDismissed] = useState(false)
+
+  // Launch-your-own-station dialog.
+  const [launchOpen, setLaunchOpen] = useState(false)
+  const [launchStep, setLaunchStep] = useState<LaunchStep | null>(null)
+  const [myStations, setMyStations] = useState<StationInfo[] | undefined>(undefined)
+  const [walletBalance, setWalletBalance] = useState<bigint | null | undefined>(undefined)
 
   /* ------------------------------------------------------------------ */
   /* Boot                                                                */
@@ -145,41 +179,69 @@ export function App(): JSX.Element {
   /* Chain refresh (read-only)                                           */
   /* ------------------------------------------------------------------ */
 
+  const applyView = useCallback((view: ChainView) => {
+    chainRef.current = view
+    setChainState(view)
+    setChainError(null)
+  }, [])
+
   const refreshChain = useCallback(
     async (announce: boolean): Promise<ChainView | null> => {
       const runtime = runtimeRef.current
       if (!runtime) return null
+      const account = stationRef.current
       try {
-        const contract = await getStationContract(stationAccount, runtime)
-        const [state, offers, ledger, buckets] = await Promise.all([
-          contract.viewState(),
-          contract.viewOffers(),
-          contract.viewLedger(0, 700),
-          contract.viewBuckets(),
-        ])
-        const view: ChainView = {
-          snapshot: snapshotFromChain(state, buckets),
-          offers: offers.map(chainOfferToModel),
-          rows: ledgerRowsFromChain(ledger),
-          blockHeight: state.block_height,
-        }
-        chainRef.current = view
-        setChainState(view)
-        setChainError(null)
+        const view = await loadView(runtime, account)
+        if (stationRef.current !== account) return null
+        applyView(view)
         if (announce) {
           setBanner({
             tone: 'ok',
             text: 'Read back from chain.',
-            detail: `revision ${state.revision} at block ${state.block_height}`,
+            detail: `revision ${view.snapshot.revision} at block ${view.blockHeight}`,
           })
         }
         return view
       } catch (error) {
-        setChainError(errorText(error))
+        if (stationRef.current === account) setChainError(errorText(error))
         return null
       }
     },
-    [stationAccount],
+    [applyView],
+  )
+
+  /**
+   * Switch the screen to another station once its first read succeeds, so
+   * the bridge never shows one station's numbers under another's name.
+   * `waitMs` keeps retrying while a just-created station comes online.
+   */
+  const openStation = useCallback(
+    async (account: string, waitMs = 0): Promise<boolean> => {
+      const runtime = runtimeRef.current
+      if (!runtime) return false
+      const deadline = Date.now() + waitMs
+      for (;;) {
+        try {
+          const view = await loadView(runtime, account)
+          stationRef.current = account
+          setStationAccount(account)
+          applyView(view)
+          setResultDismissed(false)
+          setInspectOpen(false)
+          const url = new URL(window.location.href)
+          url.searchParams.set('station', account)
+          window.history.replaceState(null, '', url)
+          return true
+        } catch (error) {
+          if (Date.now() >= deadline) {
+            setMessage({ text: `Could not open ${account}: ${errorText(error)}`, tone: 'error' })
+            return false
+          }
+          await sleep(2500)
+        }
+      }
+    },
+    [applyView],
   )
 
   useEffect(() => {
@@ -205,7 +267,7 @@ export function App(): JSX.Element {
         const runtime = runtimeRef.current
         if (!runtime) break
         try {
-          const contract = await getStationContract(stationAccount, runtime)
+          const contract = await getStationContract(stationRef.current, runtime)
           const state = await contract.viewState()
           if (state.revision !== previousRevision) {
             return refreshChain(true)
@@ -217,7 +279,7 @@ export function App(): JSX.Element {
       void refreshChain(false)
       return null
     },
-    [refreshChain, stationAccount],
+    [refreshChain],
   )
 
   /* ------------------------------------------------------------------ */
@@ -243,7 +305,7 @@ export function App(): JSX.Element {
       setMessage(null)
       pollingRef.current = true
       try {
-        const contract = await getStationContract(stationAccount, runtime)
+        const contract = await getStationContract(stationRef.current, runtime)
         const state = await contract.viewState()
         if (spec.bindsRevision && seenRevision !== null && state.revision !== seenRevision) {
           await refreshChain(false)
@@ -272,7 +334,7 @@ export function App(): JSX.Element {
         setTxPending(null)
       }
     },
-    [confirmSettled, refreshChain, stationAccount],
+    [confirmSettled, refreshChain],
   )
 
   const confirmAction = useCallback(
@@ -335,15 +397,15 @@ export function App(): JSX.Element {
         if (state.owner === accountId) throw new Error('You already command this station')
         return contract.purchase(state.revision, BigInt(state.listing))
       },
-      settledBanner: ({ accountId }) => ({
+      settledBanner: ({ contract, accountId }) => ({
         tone: 'ok',
         text: 'Station purchased. You are the captain.',
-        detail: `${accountId} now commands ${stationAccount}.`,
+        detail: `${accountId} now commands ${contract.stationAccount}.`,
       }),
     }).then((settled) => {
       if (settled) setInspectOpen(false)
     })
-  }, [runTx, stationAccount])
+  }, [runTx])
 
   const claimRepair = useCallback(() => {
     void runTx({
@@ -361,6 +423,99 @@ export function App(): JSX.Element {
       }),
     })
   }, [runTx])
+
+  /** Captain prepays the scenario's 12 visiting ships in one transaction. */
+  const seedTraffic = useCallback(
+    () =>
+      runTx({
+        kind: 'seed',
+        connectPrompt: 'Connect the captain wallet to fund visitor traffic',
+        bindsRevision: false,
+        submit: async ({ contract, state, accountId }) => {
+          assertCaptain(state, accountId)
+          const funded = (await contract.viewOffers()).filter((o) => o.campaign_id === state.campaign_id)
+          if (funded.length > 0) throw new Error('Visitor traffic is already funded for this campaign')
+          return contract.fundOffers(TRAFFIC_KINDS)
+        },
+        settledBanner: () => ({
+          tone: 'ok',
+          text: 'Station ready — 12 visiting ships are queued.',
+          detail: 'Play turn 1 from the decision rail.',
+        }),
+      }),
+    [runTx],
+  )
+
+  /* Launch ------------------------------------------------------------- */
+
+  const launchStation = useCallback(
+    async (name: string) => {
+      const runtime = runtimeRef.current
+      if (!runtime) return
+      const wallet = await runtime.getWallet()
+      if (!wallet) {
+        setMessage({ text: 'Connect a wallet to launch a station', tone: 'info' })
+        return
+      }
+      const account = stationAccountFor(name)
+      setMessage(null)
+      setLaunchStep('creating')
+      try {
+        if ((await runtime.accountBalance(account)) !== null) {
+          throw new Error(`${account} already exists — choose another name`)
+        }
+        await createStation(wallet, name)
+        setLaunchStep('waiting')
+        if (!(await openStation(account, 60_000))) return
+        setLaunchOpen(false)
+        setBanner({
+          tone: 'info',
+          text: `${account} is online — you are its captain.`,
+          detail: 'Approve the second transaction to fund the 12 visiting ships.',
+        })
+      } catch (error) {
+        setMessage({ text: extractContractError(error), tone: 'error' })
+        return
+      } finally {
+        setLaunchStep(null)
+      }
+      await seedTraffic()
+    },
+    [openStation, seedTraffic],
+  )
+
+  const openLaunch = useCallback(() => {
+    setMessage(null)
+    setLaunchOpen(true)
+  }, [])
+
+  const openOwnStation = useCallback(
+    (account: string) => {
+      void openStation(account).then((opened) => {
+        if (opened) setLaunchOpen(false)
+      })
+    },
+    [openStation],
+  )
+
+  useEffect(() => {
+    if (!launchOpen || !walletAccount) return
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    let cancelled = false
+    setMyStations(undefined)
+    setWalletBalance(undefined)
+    stationsLaunchedBy(runtime, walletAccount)
+      .then((list) => !cancelled && setMyStations(list))
+      .catch(() => !cancelled && setMyStations([]))
+    runtime
+      .accountBalance(walletAccount)
+      .then((balance) => !cancelled && setWalletBalance(balance))
+      .catch(() => !cancelled && setWalletBalance(null))
+    return () => {
+      cancelled = true
+    }
+  }, [launchOpen, walletAccount])
 
   /* Wallet ------------------------------------------------------------- */
 
@@ -400,10 +555,11 @@ export function App(): JSX.Element {
             detail: `This station is commanded by ${view.snapshot.owner}. It is listed — buy it to take command.`,
           })
         } else {
+          setLaunchOpen(true)
           setBanner({
             tone: 'info',
             text: `Connected as ${wallet.accountId}`,
-            detail: `This station is commanded by ${view.snapshot.owner}. Only the captain can act.`,
+            detail: `This station is commanded by ${view.snapshot.owner}. Launch your own station to play.`,
           })
         }
       }
@@ -496,6 +652,18 @@ export function App(): JSX.Element {
 
   const showResult = snapshot?.outcome.complete === true && !resultDismissed
 
+  const needsTraffic =
+    snapshot !== null &&
+    isCaptain &&
+    !snapshot.complete &&
+    !offers.some((offer) => offer.campaignId === snapshot.campaignId)
+
+  const suggestedName = useMemo(
+    () => suggestStationName(walletAccount ?? ''),
+    // launchOpen: a fresh suggestion each time the dialog opens.
+    [walletAccount, launchOpen],
+  )
+
   /* ------------------------------------------------------------------ */
   /* Render                                                              */
   /* ------------------------------------------------------------------ */
@@ -524,6 +692,11 @@ export function App(): JSX.Element {
             <button className="btn btn--quiet" onClick={() => void refreshChain(false)}>
               Retry read
             </button>
+            {chainError && stationAccount !== STATION_ACCOUNT ? (
+              <button className="btn btn--quiet" onClick={() => void openStation(STATION_ACCOUNT)}>
+                Open {STATION_ACCOUNT}
+              </button>
+            ) : null}
           </div>
           <div className="boot__note">NEAR testnet · no simulation · every action is signed</div>
         </div>
@@ -545,6 +718,7 @@ export function App(): JSX.Element {
         onConnectWallet={() => void connectWallet()}
         onDisconnectWallet={() => void disconnectWallet()}
         onOpenInspect={() => setInspectOpen(true)}
+        onOpenLaunch={openLaunch}
       />
 
       <div className="shell">
@@ -572,11 +746,14 @@ export function App(): JSX.Element {
           currentBlock={BigInt(chainState?.blockHeight ?? 0)}
           walletAccount={walletAccount}
           isCaptain={isCaptain}
+          needsTraffic={needsTraffic}
           confirmBusy={txPending !== null}
           onConfirm={confirmAction}
           onClaimRepair={claimRepair}
+          onSeedTraffic={() => void seedTraffic()}
           onConnectWallet={() => void connectWallet()}
           onOpenInspect={() => setInspectOpen(true)}
+          onOpenLaunch={openLaunch}
         />
       </div>
 
@@ -616,6 +793,23 @@ export function App(): JSX.Element {
         onListForSale={listForSale}
         onUnlist={unlist}
         onBuy={buy}
+      />
+
+      <LaunchStation
+        open={launchOpen}
+        onClose={() => setLaunchOpen(false)}
+        walletAccount={walletAccount}
+        balanceYocto={walletBalance}
+        myStations={myStations}
+        currentStation={stationAccount}
+        suggestedName={suggestedName}
+        step={launchStep}
+        busy={txPending !== null}
+        alert={message}
+        onDismissAlert={() => setMessage(null)}
+        onConnectWallet={() => void connectWallet()}
+        onLaunch={(name) => void launchStation(name)}
+        onOpenStation={openOwnStation}
       />
 
       {showResult ? (

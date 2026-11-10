@@ -29,12 +29,16 @@ export interface DecisionRailProps {
   walletAccount: string | null
   /** True when the connected wallet owns the station. */
   isCaptain: boolean
+  /** Captain's station has no visitor offers for this campaign yet. */
+  needsTraffic: boolean
   confirmBusy: boolean
   onConfirm: (action: ActionKind) => void
   /** Recorded repair supplier collects the protected reserve. */
   onClaimRepair: () => void
+  onSeedTraffic: () => void
   onConnectWallet: () => void
   onOpenInspect: () => void
+  onOpenLaunch: () => void
 }
 
 interface RowDef {
@@ -132,11 +136,14 @@ export function DecisionRail({
   currentBlock,
   walletAccount,
   isCaptain,
+  needsTraffic,
   confirmBusy,
   onConfirm,
   onClaimRepair,
+  onSeedTraffic,
   onConnectWallet,
   onOpenInspect,
+  onOpenLaunch,
 }: DecisionRailProps) {
   const canClaimRepair =
     walletAccount !== null && snapshot.repairSupplier === walletAccount && !snapshot.repairPaid
@@ -251,6 +258,29 @@ export function DecisionRail({
         </div>
       ) : null}
 
+      {needsTraffic ? (
+        <div className="pane" aria-label="Visitor traffic">
+          <div className="pane__preview-tag">
+            <IconDock size={12} />
+            VISITOR TRAFFIC
+          </div>
+          <div className="pane__desc">
+            No visiting ships have prepaid yet, so there is nothing to dock. Fund the scenario's 12 offers —
+            6 standard (5 Cr) and 6 heavy (8 Cr) — in one transaction.
+          </div>
+          <button
+            className={`btn btn--primary btn--block${confirmBusy ? ' is-busy' : ''}`}
+            disabled={confirmBusy}
+            onClick={onSeedTraffic}
+          >
+            {confirmBusy ? 'Working…' : 'Fund visitor traffic (78 Cr)'}
+          </button>
+          <div className="pane__note">
+            Escrow is held by the station and pays docking fees; unused offers stay refundable to you.
+          </div>
+        </div>
+      ) : null}
+
       {snapshot.complete ? (
         <div className="endpanel" aria-label="Campaign result summary">
           <div
@@ -295,6 +325,9 @@ export function DecisionRail({
             This campaign is settled on chain — the station keeps its final treasury and creditor
             claims.
           </div>
+          <button className="btn btn--primary btn--block" onClick={walletAccount ? onOpenLaunch : onConnectWallet}>
+            {walletAccount ? 'Launch a new station' : 'Connect wallet to play'}
+          </button>
           <button className="btn btn--block" onClick={onOpenInspect}>
             {snapshot.listingYocto !== null && !isCaptain
               ? 'Inspect & buy station'
@@ -389,12 +422,17 @@ export function DecisionRail({
             <div style={{ display: 'grid', gap: 6 }}>
               {!walletAccount ? (
                 <button className="btn btn--primary btn--block" onClick={onConnectWallet}>
-                  Connect wallet to command
+                  Connect wallet to play
                 </button>
               ) : !isCaptain ? (
-                <button className="btn btn--block" onClick={onOpenInspect}>
-                  {snapshot.listingYocto !== null ? 'Inspect & buy station' : 'Inspect station'}
-                </button>
+                <>
+                  <button className="btn btn--primary btn--block" onClick={onOpenLaunch}>
+                    Launch your own station
+                  </button>
+                  <button className="btn btn--block" onClick={onOpenInspect}>
+                    {snapshot.listingYocto !== null ? 'Inspect & buy this station' : 'Inspect this station'}
+                  </button>
+                </>
               ) : (
                 <button
                   className={`btn btn--primary btn--block${confirmBusy ? ' is-busy' : ''}`}
@@ -406,12 +444,13 @@ export function DecisionRail({
               )}
               {!walletAccount ? (
                 <div className="pane__note">
-                  Read-only until you connect. Every action is signed by your own NEAR wallet.
+                  Read-only until you connect. Connect your own NEAR testnet wallet, then launch a station you
+                  command — every action is signed by you.
                 </div>
               ) : !isCaptain ? (
                 <div className="pane__note">
                   Connected as <span style={{ fontFamily: 'var(--font-mono)' }}>{walletAccount}</span>.
-                  Only the station captain ({snapshot.owner}) can command it.
+                  Only this station's captain ({snapshot.owner}) can command it.
                 </div>
               ) : (
                 <div className="pane__note">

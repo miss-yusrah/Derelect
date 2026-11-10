@@ -1,7 +1,6 @@
-import type {
-  ActionKind,
-  Offer,
-} from '@derelict/game-model'
+import type { ActionKind } from '@derelict/game-model'
+import { GAS_30_TGAS, GAS_100_TGAS, GAS_FUND_OFFER, ONE_YOCTO } from '../config'
+import type { DerelictWallet, FunctionCallInput, NearExecutionOutcome, NearRuntime } from './near'
 
 /**
  * Typed thin client for the DERELICT station contract (contracts/station).
@@ -161,22 +160,31 @@ export interface StationContractClient {
   unlist(): Promise<TxOutcome>
   /** Payable: attaches exactly the listed price. revision read fresh by caller. */
   purchase(expectedRevision: number, priceYocto: string | bigint): Promise<TxOutcome>
-  /** Visiting ship funds a prepaid offer (deposit exactly 5 or 8 credits). */
-  fundOffer(kind: 'standard' | 'heavy'): Promise<TxOutcome>
+  /** Fund prepaid visitor offers (exactly 5 or 8 credits each) in one transaction. */
+  fundOffers(kinds: Array<'standard' | 'heavy'>): Promise<TxOutcome>
   claimRepair(): Promise<TxOutcome>
   claimRefund(): Promise<TxOutcome>
   claimSellerProceeds(): Promise<TxOutcome>
   nftTransfer(receiverId: string, memo?: string): Promise<TxOutcome>
 }
 
+function functionCall(
+  methodName: string,
+  args: Record<string, unknown>,
+  { gas = GAS_30_TGAS, deposit = '0' }: { gas?: string; deposit?: string } = {},
+): FunctionCallInput {
+  return { methodName, args, gas, deposit }
+}
+
 export async function getStationContract(
   stationAccount: string,
-  runtime: import('./near').NearRuntime,
+  runtime: NearRuntime,
 ): Promise<StationContractClient> {
-  const { GAS_30_TGAS, GAS_100_TGAS, ONE_YOCTO } = await import('../config')
   const wallet = await runtime.getWallet()
+  const send = (connectPrompt: string, ...calls: FunctionCallInput[]): Promise<TxOutcome> =>
+    wallet ? sendTx(wallet, stationAccount, calls) : Promise.reject(new Error(connectPrompt))
 
-  const client: StationContractClient = {
+  return {
     stationAccount,
     viewState: () => runtime.view<ChainState>(stationAccount, 'get_state', {}),
     viewOffers: () => runtime.view<ChainOffer[]>(stationAccount, 'get_offers', {}),
@@ -186,103 +194,65 @@ export async function getStationContract(
         limit: limit ?? 50,
       }),
     viewBuckets: () => runtime.view<ChainBuckets>(stationAccount, 'get_buckets', {}),
-    act: async (action, expectedRevision) => {
-      if (!wallet) throw new Error('Connect a wallet to command this station')
-      return wrappedTx(wallet.signAndSend({
-        receiverId: stationAccount,
-        methodName: 'act',
-        args: { action, expected_revision: expectedRevision },
-        gas: GAS_30_TGAS,
-        deposit: '0',
-      }))
-    },
-    listForSale: async (priceYocto) => {
-      if (!wallet) throw new Error('Connect a wallet to list this station')
-      return wrappedTx(wallet.signAndSend({
-        receiverId: stationAccount,
-        methodName: 'list_for_sale',
-        args: { price: BigInt(priceYocto).toString() },
-        gas: GAS_30_TGAS,
-        deposit: '0',
-      }))
-    },
-    unlist: async () => {
-      if (!wallet) throw new Error('Connect a wallet to change this listing')
-      return wrappedTx(wallet.signAndSend({
-        receiverId: stationAccount,
-        methodName: 'unlist',
-        args: {},
-        gas: GAS_30_TGAS,
-        deposit: '0',
-      }))
-    },
-    purchase: async (expectedRevision, priceYocto) => {
-      if (!wallet) throw new Error('Connect a wallet to buy this station')
-      return wrappedTx(wallet.signAndSend({
-        receiverId: stationAccount,
-        methodName: 'purchase',
-        args: { expected_revision: expectedRevision },
-        gas: GAS_30_TGAS,
-        deposit: BigInt(priceYocto).toString(),
-      }))
-    },
-    fundOffer: async (kind) => {
-      if (!wallet) throw new Error('Connect a wallet to fund an offer')
-      const escrow = kind === 'standard' ? yoctoOfCredits(5) : yoctoOfCredits(8)
-      return wrappedTx(wallet.signAndSend({
-        receiverId: stationAccount,
-        methodName: 'fund_offer',
-        args: { kind: kind === 'standard' ? 'standard' : 'heavy' },
-        gas: GAS_30_TGAS,
-        deposit: escrow,
-      }))
-    },
-    claimRepair: async () => {
-      if (!wallet) throw new Error('Only the recorded supplier may claim')
-      return wrappedTx(wallet.signAndSend({
-        receiverId: stationAccount,
-        methodName: 'claim_repair',
-        args: {},
-        gas: GAS_100_TGAS,
-        deposit: '0',
-      }))
-    },
-    claimRefund: async () => {
-      if (!wallet) throw new Error('Connect a wallet to claim a refund')
-      return wrappedTx(wallet.signAndSend({
-        receiverId: stationAccount,
-        methodName: 'claim_refund',
-        args: {},
-        gas: GAS_100_TGAS,
-        deposit: '0',
-      }))
-    },
-    claimSellerProceeds: async () => {
-      if (!wallet) throw new Error('Connect a wallet to claim proceeds')
-      return wrappedTx(wallet.signAndSend({
-        receiverId: stationAccount,
-        methodName: 'claim_seller_proceeds',
-        args: {},
-        gas: GAS_100_TGAS,
-        deposit: '0',
-      }))
-    },
-    nftTransfer: async (receiverId, memo) => {
-      if (!wallet) throw new Error('Connect a wallet to transfer the station NFT')
-      return wrappedTx(wallet.signAndSend({
-        receiverId: stationAccount,
-        methodName: 'nft_transfer',
-        args: { receiver_id: receiverId, token_id: 'station', approval_id: null, memo: memo ?? null },
-        gas: GAS_100_TGAS,
-        deposit: ONE_YOCTO,
-      }))
-    },
+    act: (action, expectedRevision) =>
+      send(
+        'Connect a wallet to command this station',
+        functionCall('act', { action, expected_revision: expectedRevision }),
+      ),
+    listForSale: (priceYocto) =>
+      send(
+        'Connect a wallet to list this station',
+        functionCall('list_for_sale', { price: BigInt(priceYocto).toString() }),
+      ),
+    unlist: () => send('Connect a wallet to change this listing', functionCall('unlist', {})),
+    purchase: (expectedRevision, priceYocto) =>
+      send(
+        'Connect a wallet to buy this station',
+        functionCall(
+          'purchase',
+          { expected_revision: expectedRevision },
+          { deposit: BigInt(priceYocto).toString() },
+        ),
+      ),
+    fundOffers: (kinds) =>
+      send(
+        'Connect a wallet to fund visitor offers',
+        ...kinds.map((kind) =>
+          functionCall(
+            'fund_offer',
+            { kind },
+            { gas: GAS_FUND_OFFER, deposit: yoctoOfCredits(kind === 'standard' ? 5 : 8) },
+          ),
+        ),
+      ),
+    claimRepair: () =>
+      send('Only the recorded supplier may claim', functionCall('claim_repair', {}, { gas: GAS_100_TGAS })),
+    claimRefund: () =>
+      send('Connect a wallet to claim a refund', functionCall('claim_refund', {}, { gas: GAS_100_TGAS })),
+    claimSellerProceeds: () =>
+      send(
+        'Connect a wallet to claim proceeds',
+        functionCall('claim_seller_proceeds', {}, { gas: GAS_100_TGAS }),
+      ),
+    nftTransfer: (receiverId, memo) =>
+      send(
+        'Connect a wallet to transfer the station NFT',
+        functionCall(
+          'nft_transfer',
+          { receiver_id: receiverId, token_id: 'station', approval_id: null, memo: memo ?? null },
+          { gas: GAS_100_TGAS, deposit: ONE_YOCTO },
+        ),
+      ),
   }
-  return client
 }
 
-async function wrappedTx(pending: Promise<import('./near').NearExecutionOutcome>): Promise<TxOutcome> {
-  let outcome: import('./near').NearExecutionOutcome
+/** Sign one transaction with the connected wallet and surface on-chain failures. */
+export function sendTx(wallet: DerelictWallet, receiverId: string, calls: FunctionCallInput[]): Promise<TxOutcome> {
+  return wrappedTx(wallet.signAndSend({ receiverId, calls }))
+}
+
+async function wrappedTx(pending: Promise<NearExecutionOutcome>): Promise<TxOutcome> {
+  let outcome: NearExecutionOutcome
   try {
     outcome = await pending
   } catch (error) {

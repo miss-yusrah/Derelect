@@ -16,6 +16,7 @@ export interface HeaderProps {
   onConnectWallet: () => void
   onDisconnectWallet: () => void
   onOpenInspect: () => void
+  onOpenLaunch: () => void
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -37,6 +38,7 @@ export function Header({
   onConnectWallet,
   onDisconnectWallet,
   onOpenInspect,
+  onOpenLaunch,
 }: HeaderProps) {
   const [copied, setCopied] = useState(false)
 
@@ -103,6 +105,9 @@ export function Header({
         </>
       )}
 
+      <button className="btn btn--small btn--quiet" onClick={onOpenLaunch}>
+        Launch station
+      </button>
       <button className="btn btn--small btn--quiet" onClick={onOpenInspect}>
         Inspect / List
       </button>
