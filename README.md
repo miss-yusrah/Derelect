@@ -2,6 +2,8 @@
 
 **Buy the station. Inherit its condition and commitments.**
 
+**Play now: [playderelect.xyz](https://playderelect.xyz)** — on NEAR testnet, with any NEAR wallet.
+
 DERELICT is a six-turn strategy game about running a battered orbital salvage
 station. You dock visiting ships to earn credits, manage fuel and hull damage,
 and decide when a repair is worth the money. When the sixth turn ends, the
@@ -18,7 +20,8 @@ repair bill — while the original supplier still gets paid.
 
 ## How it works
 
-1. **Connect a wallet.** Use any NEAR testnet wallet (Meteor, Intear, …).
+1. **Open [playderelect.xyz](https://playderelect.xyz) and connect a
+   wallet.** Use any NEAR testnet wallet (Meteor, Intear, …).
    Testnet NEAR is free from [near-faucet.io](https://near-faucet.io/).
 2. **Launch your station.** About 6.1 testnet NEAR in two approvals: the
    station account is created with 6 NEAR held for its contract storage and
@@ -35,7 +38,8 @@ repair bill — while the original supplier still gets paid.
 
 The app opens on a connect screen and then shows the stations your wallet
 owns; **How it works** in the app walks through all of this. Any station can
-also be viewed read-only with `?station=<account>`.
+also be viewed read-only with a link like
+`https://playderelect.xyz/?station=<account>`.
 
 ## Rules at a glance
 
