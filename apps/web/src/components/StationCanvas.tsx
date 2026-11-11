@@ -1,12 +1,12 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import type { GameSnapshot } from '../lib/state'
 import type { ModuleId, StationFx } from '../lib/stationFx'
-import stationIllustration from '../assets/station-illustration.png'
-import droneSprite from '../assets/station-drone.png'
-import panelW1 from '../assets/station-panel-w1.png'
-import panelW2 from '../assets/station-panel-w2.png'
-import panelW3 from '../assets/station-panel-w3.png'
-import panelW4 from '../assets/station-panel-w4.png'
+import stationIllustration from '../assets/station-illustration.webp'
+import droneSprite from '../assets/station-drone.webp'
+import panelW1 from '../assets/station-panel-w1.webp'
+import panelW2 from '../assets/station-panel-w2.webp'
+import panelW3 from '../assets/station-panel-w3.webp'
+import panelW4 from '../assets/station-panel-w4.webp'
 import { IconWarning } from './icons'
 
 export interface StationCanvasProps {

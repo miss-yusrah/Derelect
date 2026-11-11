@@ -14,7 +14,7 @@ are all held by the station itself. Sell the station mid-campaign and the
 buyer inherits everything — its fuel, its damage, its treasury and its unpaid
 repair bill — while the original supplier still gets paid.
 
-![DERELICT station](apps/web/src/assets/station-illustration.png)
+![DERELICT station](apps/web/src/assets/station-illustration.webp)
 
 ## How it works
 

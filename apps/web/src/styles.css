@@ -2448,8 +2448,8 @@ button {
 
 /* Stars show only over open space: the mask is the art's background. */
 .station-stars {
-  -webkit-mask: url('./assets/station-space-mask.png') center / cover no-repeat;
-  mask: url('./assets/station-space-mask.png') center / cover no-repeat;
+  -webkit-mask: url('./assets/station-space-mask.webp') center / cover no-repeat;
+  mask: url('./assets/station-space-mask.webp') center / cover no-repeat;
 }
 
 .station-stars-field circle {

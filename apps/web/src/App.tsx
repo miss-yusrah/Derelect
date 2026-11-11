@@ -74,9 +74,20 @@ interface TxSpec {
   settledBanner?: (ctx: TxContext) => BannerState
 }
 
-/** Read everything the bridge shows for one station (contract views only). */
-async function loadView(runtime: NearRuntime, account: string): Promise<ChainView> {
+/**
+ * Read everything the bridge shows for one station (contract views only).
+ * Given the previous read of the same station, a poll costs one get_state
+ * call: every on-chain change bumps the revision, so an unchanged revision
+ * means offers, ledger and buckets are unchanged too.
+ */
+async function loadView(runtime: NearRuntime, account: string, previous: ChainView | null = null): Promise<ChainView> {
   const contract = await getStationContract(account, runtime)
+  if (previous && previous.snapshot.stationAccount === account) {
+    const state = await contract.viewState()
+    if (state.revision === previous.snapshot.revision) {
+      return state.block_height === previous.blockHeight ? previous : { ...previous, blockHeight: state.block_height }
+    }
+  }
   const [state, offers, ledger, buckets] = await Promise.all([
     contract.viewState(),
     contract.viewOffers(),
@@ -259,9 +270,10 @@ export function App(): JSX.Element {
       const account = stationRef.current
       if (!runtime || account === null) return null
       try {
-        const view = await loadView(runtime, account)
+        const previous = chainRef.current
+        const view = await loadView(runtime, account, previous)
         if (stationRef.current !== account) return null
-        applyView(view)
+        if (view !== previous) applyView(view)
         if (announce) {
           setBanner({
             tone: 'ok',
