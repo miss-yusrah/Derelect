@@ -2,13 +2,13 @@
 
 ## What to believe in 90 seconds
 
-1. Open the app. It shows the showcase station
-   `isa02.derelict-factory.testnet` read-only. Every number on screen is a
-   contract view — there is no practice mode or simulator.
-2. Click **Connect wallet** and use your own NEAR testnet wallet (Meteor,
-   Intear, …). You need about 6.1 testnet NEAR; it is free from
-   [near-faucet.io](https://near-faucet.io/).
-3. Click **Launch station**. Two wallet approvals: `create_station` on the
+1. Open the app and click **Connect wallet** with your own NEAR testnet
+   wallet (Meteor, Intear, …). You need about 6.1 testnet NEAR; it is free
+   from [near-faucet.io](https://near-faucet.io/). Every number on screen is
+   a contract view — there is no practice mode, demo data or simulator.
+2. The app opens the newest station your wallet owns. If you have none, it
+   offers **Launch your station**.
+3. Launching takes two wallet approvals: `create_station` on the
    factory creates a keyless station account owned by you (6 NEAR storage +
    10 Cr opening funds), then one transaction prepays the 12 visiting ships
    (78 Cr escrow, refundable if unused). The station is a real NEAR account
@@ -34,8 +34,8 @@
     account's access keys: none — the contract is the sole controller.
 
 Every launched station is listed by the factory's `get_stations()`; the
-**Launch station** dialog shows the ones your wallet launched so you can
-reopen them.
+**Launch station** dialog shows the ones your wallet currently owns (read from
+each station's `get_owner()`) so you can switch between them.
 
 ## Reproduce locally
 

@@ -212,7 +212,7 @@ export function previewStateFromChain(
         ? null
         : {
             id: 1,
-            supplier: snapshot.repairSupplier ?? 'supplier.derelict.testnet',
+            supplier: snapshot.repairSupplier ?? '',
             reserveYocto: repairReserve,
             campaignId: snapshot.campaignId,
             dueTurn: snapshot.repairDueTurn,

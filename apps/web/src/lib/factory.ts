@@ -53,10 +53,19 @@ export function listStations(runtime: NearRuntime): Promise<StationInfo[]> {
   return runtime.view<StationInfo[]>(FACTORY_ACCOUNT, 'get_stations', {})
 }
 
-/** Stations this account launched (newest first); a later sale may have changed the owner. */
-export async function stationsLaunchedBy(runtime: NearRuntime, captain: string): Promise<StationInfo[]> {
+/**
+ * Stations the account owns right now, newest first. The factory index only
+ * records the launching captain, so ownership is read from each station
+ * (a purchase moves it). Unreadable stations are skipped.
+ */
+export async function stationsOwnedBy(runtime: NearRuntime, account: string): Promise<StationInfo[]> {
   const all = await listStations(runtime)
-  return all.filter((info) => info.captain === captain).sort((a, b) => b.created_block - a.created_block)
+  const owners = await Promise.all(
+    all.map((info) => runtime.view<string>(info.station_account, 'get_owner', {}).catch(() => null)),
+  )
+  return all
+    .filter((_, i) => owners[i] === account)
+    .sort((a, b) => b.created_block - a.created_block)
 }
 
 /** Ask the factory to create, fund and initialize a station owned by the wallet. */

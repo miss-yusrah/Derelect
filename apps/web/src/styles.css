@@ -1751,6 +1751,45 @@ button {
   color: var(--ink-2);
 }
 
+/* Blocked wallet window: sits above the wallet connector's own popup. */
+.popup-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 100000001;
+  display: grid;
+  place-items: center;
+  background: rgba(5, 7, 8, 0.72);
+}
+
+.popup-prompt__panel {
+  width: min(420px, calc(100vw - 32px));
+  background: var(--surface);
+  border: 1px solid var(--orange);
+  border-radius: var(--radius);
+  padding: var(--sp-5);
+  display: grid;
+  gap: var(--sp-3);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.popup-prompt__panel p {
+  margin: 0;
+}
+
+.popup-prompt__title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.popup-prompt__actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+
 /* Launch-your-station dialog */
 .launch__name {
   min-height: 44px;
@@ -2061,6 +2100,10 @@ button {
   color: var(--ink-3);
 }
 
+.boot__note a {
+  color: var(--orange);
+}
+
 @keyframes boot-pulse {
   from {
     opacity: 0.45;
@@ -2110,7 +2153,9 @@ button {
     overflow-y: auto;
   }
 
+  /* Stacked: panels take their natural height and the page scrolls. */
   .shell {
+    flex: none;
     grid-template-columns: 1fr;
     grid-template-areas:
       'canvas'
@@ -2118,12 +2163,19 @@ button {
       'rail-right';
   }
 
+  .station-canvas {
+    grid-area: canvas;
+    aspect-ratio: 896 / 679;
+  }
+
   .rail-left {
+    grid-area: rail-left;
     border-right: none;
     border-top: 1px solid var(--line);
   }
 
   .rail-right {
+    grid-area: rail-right;
     border-left: none;
     border-top: 1px solid var(--line);
   }
@@ -2136,10 +2188,6 @@ button {
   .logpane {
     border-right: none;
     border-bottom: 1px solid var(--line);
-  }
-
-  .canvas {
-    min-height: 380px;
   }
 
   .hdr {
@@ -2170,6 +2218,11 @@ button {
   .ledgerlist li .src {
     display: none;
   }
+
+  .station-canvas-registries,
+  .station-canvas::after {
+    display: none;
+  }
 }
 
 /* Reduced motion ------------------------------------------------- */
@@ -2194,11 +2247,13 @@ button {
   background: #0b0f10;
 }
 
+/* The art fills the whole panel edge to edge, like the concept. The image
+   (object-fit: cover) and the SVG overlay (preserveAspectRatio slice) scale
+   and crop identically, so the module callouts stay on their modules. */
 .station-canvas-artwrap {
-  position: relative;
-  aspect-ratio: 900 / 688;
-  height: min(100%, calc((100vw - 560px) * 688 / 900));
-  max-width: 100%;
+  position: absolute;
+  inset: 0;
+  margin: 0;
 }
 
 .station-canvas-img,
@@ -2211,7 +2266,7 @@ button {
 }
 
 .station-canvas-img {
-  object-fit: contain;
+  object-fit: cover;
 }
 
 /* module callouts */
@@ -2250,8 +2305,19 @@ button {
   to { opacity: 1; transform: translate(0, 0) rotate(-16deg); }
 }
 
+/* Soft fade so the bottom registry text stays legible over the art. */
+.station-canvas::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 48px;
+  background: linear-gradient(transparent, rgba(11, 15, 16, 0.85));
+  pointer-events: none;
+}
+
 .station-canvas-registries {
   position: absolute;
+  z-index: 1;
   left: 14px;
   right: 14px;
   bottom: 10px;

@@ -6,7 +6,6 @@ import {
   getStationContract,
   toContractAction,
   CREDIT as CREDIT_UNIT,
-  type ChainState,
   type StationContractClient,
 } from './lib/contract'
 import {
@@ -21,11 +20,10 @@ import {
   TRAFFIC_KINDS,
   createStation,
   stationAccountFor,
-  stationsLaunchedBy,
+  stationsOwnedBy,
   suggestStationName,
   type StationInfo,
 } from './lib/factory'
-import { STATION_ACCOUNT } from './config'
 import { Header } from './components/Header'
 import { StatusRail } from './components/StatusRail'
 import { StationCanvas } from './components/StationCanvas'
@@ -35,6 +33,8 @@ import { LedgerDrawer } from './components/LedgerDrawer'
 import { InspectBuy } from './components/InspectBuy'
 import { MissionResult } from './components/MissionResult'
 import { LaunchStation, type LaunchStep } from './components/LaunchStation'
+import { Welcome } from './components/Welcome'
+import { onBlockedPopup, type BlockedPopup } from './lib/popupGuard'
 import { Banner } from './components/primitives'
 import { IconClose } from './components/icons'
 
@@ -55,8 +55,8 @@ interface ChainView {
 
 interface TxContext {
   contract: StationContractClient
-  /** Station state read immediately before signing. */
-  state: ChainState
+  /** The station exactly as the user saw it when they clicked. */
+  view: ChainView
   accountId: string
 }
 
@@ -64,8 +64,6 @@ interface TxSpec {
   kind: TxKind
   /** Shown when there is no wallet session. */
   connectPrompt: string
-  /** Refuse to sign when the station moved past the revision on screen. */
-  bindsRevision: boolean
   submit: (ctx: TxContext) => Promise<unknown>
   settledBanner?: (ctx: TxContext) => BannerState
 }
@@ -87,10 +85,10 @@ async function loadView(runtime: NearRuntime, account: string): Promise<ChainVie
   }
 }
 
-function assertCaptain(state: ChainState, accountId: string): void {
-  if (state.owner !== accountId) {
+function assertCaptain(snapshot: GameSnapshot, accountId: string): void {
+  if (snapshot.owner !== accountId) {
     throw new Error(
-      `Only the station captain (${state.owner}) may command this station. You are connected as ${accountId}.`,
+      `Only the station captain (${snapshot.owner}) may command this station. You are connected as ${accountId}.`,
     )
   }
 }
@@ -107,13 +105,20 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** Contract error text, or a plain explanation when the wallet was dismissed. */
+function txErrorText(error: unknown): string {
+  const text = extractContractError(error)
+  return /wallet closed|user rejected|rejected by user|cancell?ed/i.test(text)
+    ? 'The wallet was closed before approving — nothing was sent.'
+    : text
+}
+
 export function App(): JSX.Element {
-  // Station on screen: ?station=<account> (defaults to config.json). The ref
+  // Station on screen: a `?station=` link, else the newest station the
+  // connected wallet owns; null shows the connect / launch screen. The ref
   // lets async reads drop results for a station that is no longer shown.
-  const [stationAccount, setStationAccount] = useState(
-    () =>
-      new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('station') ||
-      STATION_ACCOUNT,
+  const [stationAccount, setStationAccount] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get('station') || null,
   )
   const stationRef = useRef(stationAccount)
 
@@ -122,7 +127,11 @@ export function App(): JSX.Element {
   const [runtimeReady, setRuntimeReady] = useState(false)
   const [nearMissing, setNearMissing] = useState(false)
   const [walletAccount, setWalletAccount] = useState<string | null>(null)
+  /** False until a previous wallet session has been restored (or ruled out). */
+  const [walletChecked, setWalletChecked] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  /** Stations the connected wallet owns; undefined while loading or disconnected. */
+  const [ownedStations, setOwnedStations] = useState<StationInfo[] | undefined>(undefined)
 
   // Chain data (never optimistic).
   const [chainState, setChainState] = useState<ChainView | null>(null)
@@ -141,8 +150,14 @@ export function App(): JSX.Element {
   // Launch-your-own-station dialog.
   const [launchOpen, setLaunchOpen] = useState(false)
   const [launchStep, setLaunchStep] = useState<LaunchStep | null>(null)
-  const [myStations, setMyStations] = useState<StationInfo[] | undefined>(undefined)
   const [walletBalance, setWalletBalance] = useState<bigint | null | undefined>(undefined)
+
+  // A wallet window the browser blocked, waiting for one click to open.
+  const [blockedPopup, setBlockedPopup] = useState<BlockedPopup | null>(null)
+  useEffect(() => {
+    onBlockedPopup(setBlockedPopup)
+    return () => onBlockedPopup(null)
+  }, [])
 
   /* ------------------------------------------------------------------ */
   /* Boot                                                                */
@@ -155,12 +170,14 @@ export function App(): JSX.Element {
       if (!runtime) {
         setNearMissing(true)
         setChainError('NEAR runtime failed to load')
+        setWalletChecked(true)
         return
       }
       runtimeRef.current = runtime
       setRuntimeReady(true)
       if (!runtime.walletLibraryAvailable) {
         setNearMissing(true)
+        setWalletChecked(true)
         return
       }
       runtime
@@ -169,6 +186,9 @@ export function App(): JSX.Element {
           if (!cancelled && wallet) setWalletAccount(wallet.accountId)
         })
         .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) setWalletChecked(true)
+        })
     })
     return () => {
       cancelled = true
@@ -188,8 +208,8 @@ export function App(): JSX.Element {
   const refreshChain = useCallback(
     async (announce: boolean): Promise<ChainView | null> => {
       const runtime = runtimeRef.current
-      if (!runtime) return null
       const account = stationRef.current
+      if (!runtime || account === null) return null
       try {
         const view = await loadView(runtime, account)
         if (stationRef.current !== account) return null
@@ -244,8 +264,23 @@ export function App(): JSX.Element {
     [applyView],
   )
 
+  /** Leave the current station and return to the connect / launch screen. */
+  const closeStation = useCallback(() => {
+    stationRef.current = null
+    setStationAccount(null)
+    chainRef.current = null
+    setChainState(null)
+    setChainError(null)
+    setBanner(null)
+    setInspectOpen(false)
+    setLedgerOpen(false)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('station')
+    window.history.replaceState(null, '', url)
+  }, [])
+
   useEffect(() => {
-    if (!runtimeReady) return
+    if (!runtimeReady || stationAccount === null) return
     void refreshChain(false)
     const timer = window.setInterval(() => {
       if (!pollingRef.current && document.visibilityState !== 'hidden') void refreshChain(false)
@@ -253,7 +288,27 @@ export function App(): JSX.Element {
     return () => {
       window.clearInterval(timer)
     }
-  }, [refreshChain, runtimeReady])
+  }, [refreshChain, runtimeReady, stationAccount])
+
+  // Owned stations follow the connected wallet.
+  useEffect(() => {
+    setOwnedStations(undefined)
+    const runtime = runtimeRef.current
+    if (!runtimeReady || !runtime || walletAccount === null) return
+    let cancelled = false
+    stationsOwnedBy(runtime, walletAccount)
+      .then((list) => !cancelled && setOwnedStations(list))
+      .catch(() => !cancelled && setOwnedStations([]))
+    return () => {
+      cancelled = true
+    }
+  }, [runtimeReady, walletAccount])
+
+  // With nothing on screen, open the wallet's newest station.
+  useEffect(() => {
+    if (stationAccount !== null || !ownedStations?.length) return
+    void openStation(ownedStations[0].station_account)
+  }, [stationAccount, ownedStations, openStation])
 
   /**
    * Poll until the read-back shows a new revision (never optimistic).
@@ -265,9 +320,10 @@ export function App(): JSX.Element {
       while (Date.now() < deadline) {
         await sleep(2400)
         const runtime = runtimeRef.current
-        if (!runtime) break
+        const account = stationRef.current
+        if (!runtime || account === null) break
         try {
-          const contract = await getStationContract(stationRef.current, runtime)
+          const contract = await getStationContract(account, runtime)
           const state = await contract.viewState()
           if (state.revision !== previousRevision) {
             return refreshChain(true)
@@ -287,35 +343,31 @@ export function App(): JSX.Element {
   /* ------------------------------------------------------------------ */
 
   /**
-   * Shared signing flow: re-read the station, validate against that fresh
-   * state, sign with the connected wallet, then wait for the read-back.
+   * Shared signing flow: validate against the station on screen, sign with
+   * the connected wallet, then wait for the read-back. Nothing slow may run
+   * before the wallet call: browsers only let the wallet open its approval
+   * window shortly after the click. The contract rejects a stale revision.
    * Resolves true only once the chain shows the new revision.
    */
   const runTx = useCallback(
     async (spec: TxSpec): Promise<boolean> => {
       const runtime = runtimeRef.current
-      if (!runtime) return false
+      const station = stationRef.current
+      const view = chainRef.current
+      if (!runtime || station === null || view === null) return false
       const wallet = await runtime.getWallet()
       if (!wallet) {
         setMessage({ text: spec.connectPrompt, tone: 'info' })
         return false
       }
-      const seenRevision = chainRef.current?.snapshot.revision ?? null
       setTxPending(spec.kind)
       setMessage(null)
       pollingRef.current = true
       try {
-        const contract = await getStationContract(stationRef.current, runtime)
-        const state = await contract.viewState()
-        if (spec.bindsRevision && seenRevision !== null && state.revision !== seenRevision) {
-          await refreshChain(false)
-          throw new Error(
-            'The station changed since this screen was read — review the refreshed numbers and confirm again',
-          )
-        }
-        const ctx: TxContext = { contract, state, accountId: wallet.accountId }
+        const contract = await getStationContract(station, runtime)
+        const ctx: TxContext = { contract, view, accountId: wallet.accountId }
         await spec.submit(ctx)
-        const settled = await confirmSettled(state.revision)
+        const settled = await confirmSettled(view.snapshot.revision)
         if (!settled) {
           setBanner({
             tone: 'info',
@@ -327,7 +379,14 @@ export function App(): JSX.Element {
         if (spec.settledBanner) setBanner(spec.settledBanner(ctx))
         return true
       } catch (error) {
-        setMessage({ text: extractContractError(error), tone: 'error' })
+        const text = txErrorText(error)
+        setMessage({
+          text: /stale/i.test(text)
+            ? `${text} — the station changed since this screen was read. Review the refreshed numbers and try again.`
+            : text,
+          tone: 'error',
+        })
+        void refreshChain(false)
         return false
       } finally {
         pollingRef.current = false
@@ -342,11 +401,10 @@ export function App(): JSX.Element {
       void runTx({
         kind: 'act',
         connectPrompt: 'Connect a wallet to command this station',
-        bindsRevision: true,
-        submit: ({ contract, state, accountId }) => {
-          assertCaptain(state, accountId)
-          if (state.complete) throw new Error('Campaign is complete')
-          return contract.act(toContractAction(action), state.revision)
+        submit: ({ contract, view: { snapshot }, accountId }) => {
+          assertCaptain(snapshot, accountId)
+          if (snapshot.complete) throw new Error('Campaign is complete')
+          return contract.act(toContractAction(action), snapshot.revision)
         },
       })
     },
@@ -362,9 +420,8 @@ export function App(): JSX.Element {
       void runTx({
         kind: 'list',
         connectPrompt: 'Connect a wallet to list this station',
-        bindsRevision: false,
-        submit: ({ contract, state, accountId }) => {
-          assertCaptain(state, accountId)
+        submit: ({ contract, view: { snapshot }, accountId }) => {
+          assertCaptain(snapshot, accountId)
           return contract.listForSale(creditsToYocto(priceCredits))
         },
         settledBanner: () => ({ tone: 'ok', text: `Listing confirmed at ${priceCredits} Cr.` }),
@@ -377,9 +434,8 @@ export function App(): JSX.Element {
     void runTx({
       kind: 'unlist',
       connectPrompt: 'Connect a wallet to change this listing',
-      bindsRevision: false,
-      submit: ({ contract, state, accountId }) => {
-        assertCaptain(state, accountId)
+      submit: ({ contract, view: { snapshot }, accountId }) => {
+        assertCaptain(snapshot, accountId)
         return contract.unlist()
       },
       settledBanner: () => ({ tone: 'ok', text: 'Listing removed on chain.' }),
@@ -390,12 +446,11 @@ export function App(): JSX.Element {
     void runTx({
       kind: 'purchase',
       connectPrompt: 'Connect a wallet to buy this station',
-      // The buyer pays the price they were shown: a moved revision means a stale quote.
-      bindsRevision: true,
-      submit: ({ contract, state, accountId }) => {
-        if (state.listing === null) throw new Error('No active listing')
-        if (state.owner === accountId) throw new Error('You already command this station')
-        return contract.purchase(state.revision, BigInt(state.listing))
+      // The buyer pays the price they were shown; the contract rejects a stale revision.
+      submit: ({ contract, view: { snapshot }, accountId }) => {
+        if (snapshot.listingYocto === null) throw new Error('No active listing')
+        if (snapshot.owner === accountId) throw new Error('You already command this station')
+        return contract.purchase(snapshot.revision, snapshot.listingYocto)
       },
       settledBanner: ({ contract, accountId }) => ({
         tone: 'ok',
@@ -411,9 +466,8 @@ export function App(): JSX.Element {
     void runTx({
       kind: 'claimRepair',
       connectPrompt: 'Connect the supplier wallet to claim the repair fee',
-      bindsRevision: false,
-      submit: ({ contract, state, accountId }) => {
-        if (state.repair?.supplier !== accountId) throw new Error('Only the recorded supplier may claim')
+      submit: ({ contract, view: { snapshot }, accountId }) => {
+        if (snapshot.repairSupplier !== accountId) throw new Error('Only the recorded supplier may claim')
         return contract.claimRepair()
       },
       settledBanner: () => ({
@@ -430,11 +484,11 @@ export function App(): JSX.Element {
       runTx({
         kind: 'seed',
         connectPrompt: 'Connect the captain wallet to fund visitor traffic',
-        bindsRevision: false,
-        submit: async ({ contract, state, accountId }) => {
-          assertCaptain(state, accountId)
-          const funded = (await contract.viewOffers()).filter((o) => o.campaign_id === state.campaign_id)
-          if (funded.length > 0) throw new Error('Visitor traffic is already funded for this campaign')
+        submit: ({ contract, view: { snapshot, offers }, accountId }) => {
+          assertCaptain(snapshot, accountId)
+          if (offers.some((offer) => offer.campaignId === snapshot.campaignId)) {
+            throw new Error('Visitor traffic is already funded for this campaign')
+          }
           return contract.fundOffers(TRAFFIC_KINDS)
         },
         settledBanner: () => ({
@@ -457,36 +511,41 @@ export function App(): JSX.Element {
         setMessage({ text: 'Connect a wallet to launch a station', tone: 'info' })
         return
       }
+      // Name availability is checked while typing: the wallet call must
+      // follow the click immediately or the browser blocks its window.
       const account = stationAccountFor(name)
       setMessage(null)
       setLaunchStep('creating')
       try {
-        if ((await runtime.accountBalance(account)) !== null) {
-          throw new Error(`${account} already exists — choose another name`)
-        }
         await createStation(wallet, name)
         setLaunchStep('waiting')
         if (!(await openStation(account, 60_000))) return
         setLaunchOpen(false)
+        void stationsOwnedBy(runtime, wallet.accountId).then(setOwnedStations).catch(() => undefined)
+        // The second approval needs its own click, so it is a button, not automatic.
         setBanner({
           tone: 'info',
           text: `${account} is online — you are its captain.`,
-          detail: 'Approve the second transaction to fund the 12 visiting ships.',
+          detail: 'Step 2: click Fund visitor traffic in the decision rail to queue the 12 visiting ships.',
         })
       } catch (error) {
-        setMessage({ text: extractContractError(error), tone: 'error' })
-        return
+        setMessage({ text: txErrorText(error), tone: 'error' })
       } finally {
         setLaunchStep(null)
       }
-      await seedTraffic()
     },
-    [openStation, seedTraffic],
+    [openStation],
   )
 
   const openLaunch = useCallback(() => {
     setMessage(null)
     setLaunchOpen(true)
+  }, [])
+
+  const checkStationName = useCallback(async (name: string): Promise<boolean> => {
+    const runtime = runtimeRef.current
+    if (!runtime) return false
+    return (await runtime.accountBalance(stationAccountFor(name))) === null
   }, [])
 
   const openOwnStation = useCallback(
@@ -503,11 +562,7 @@ export function App(): JSX.Element {
     const runtime = runtimeRef.current
     if (!runtime) return
     let cancelled = false
-    setMyStations(undefined)
     setWalletBalance(undefined)
-    stationsLaunchedBy(runtime, walletAccount)
-      .then((list) => !cancelled && setMyStations(list))
-      .catch(() => !cancelled && setMyStations([]))
     runtime
       .accountBalance(walletAccount)
       .then((balance) => !cancelled && setWalletBalance(balance))
@@ -545,23 +600,18 @@ export function App(): JSX.Element {
         text: `Wallet connected: ${wallet.accountId}`,
         detail: 'NEAR testnet — every action is signed by your wallet.',
       })
+      // A linked station that belongs to someone else stays read-only.
       const view = await refreshChain(false)
       if (view && view.snapshot.owner !== wallet.accountId) {
-        if (view.snapshot.listingYocto !== null) {
-          setInspectOpen(true)
-          setBanner({
-            tone: 'info',
-            text: `Connected as ${wallet.accountId}`,
-            detail: `This station is commanded by ${view.snapshot.owner}. It is listed — buy it to take command.`,
-          })
-        } else {
-          setLaunchOpen(true)
-          setBanner({
-            tone: 'info',
-            text: `Connected as ${wallet.accountId}`,
-            detail: `This station is commanded by ${view.snapshot.owner}. Launch your own station to play.`,
-          })
-        }
+        if (view.snapshot.listingYocto !== null) setInspectOpen(true)
+        setBanner({
+          tone: 'info',
+          text: `Connected as ${wallet.accountId}`,
+          detail:
+            view.snapshot.listingYocto !== null
+              ? `This station is commanded by ${view.snapshot.owner}. It is listed — buy it to take command.`
+              : `This station is commanded by ${view.snapshot.owner}. Open or launch your own from Launch station.`,
+        })
       }
     } catch (error) {
       const raw = errorText(error)
@@ -585,9 +635,9 @@ export function App(): JSX.Element {
       // The local session is cleared even if the wallet rejects sign-out.
     }
     setWalletAccount(null)
-    setBanner({ tone: 'neutral', text: 'Wallet disconnected.', detail: 'The station is read-only until you reconnect.' })
-    void refreshChain(false)
-  }, [refreshChain])
+    setLaunchOpen(false)
+    closeStation()
+  }, [closeStation])
 
   /* ------------------------------------------------------------------ */
   /* Derived view                                                        */
@@ -668,6 +718,66 @@ export function App(): JSX.Element {
   /* Render                                                              */
   /* ------------------------------------------------------------------ */
 
+  const launchDialog = (
+    <LaunchStation
+      open={launchOpen}
+      onClose={() => setLaunchOpen(false)}
+      walletAccount={walletAccount}
+      balanceYocto={walletBalance}
+      myStations={ownedStations}
+      currentStation={stationAccount}
+      suggestedName={suggestedName}
+      step={launchStep}
+      busy={txPending !== null}
+      alert={message}
+      onDismissAlert={() => setMessage(null)}
+      onConnectWallet={() => void connectWallet()}
+      onCheckName={checkStationName}
+      onLaunch={(name) => void launchStation(name)}
+      onOpenStation={openOwnStation}
+    />
+  )
+
+  const popupPrompt = blockedPopup ? (
+    <div className="popup-prompt" role="alertdialog" aria-modal="true" aria-label="Open your wallet">
+      <div className="popup-prompt__panel">
+        <div className="popup-prompt__title">OPEN YOUR WALLET</div>
+        <p>
+          Your browser blocked the wallet's approval window. Open it to review and approve the
+          transaction.
+        </p>
+        <div className="popup-prompt__actions">
+          <button className="btn btn--primary" onClick={() => blockedPopup.open()}>
+            Open wallet window
+          </button>
+          <button className="btn btn--quiet" onClick={() => blockedPopup.cancel()}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
+  if (stationAccount === null) {
+    return (
+      <>
+        <Welcome
+          walletAccount={walletAccount}
+          walletChecked={walletChecked}
+          connecting={connecting}
+          nearMissing={nearMissing}
+          ownedStations={ownedStations}
+          message={message}
+          onConnectWallet={() => void connectWallet()}
+          onDisconnectWallet={() => void disconnectWallet()}
+          onOpenLaunch={openLaunch}
+        />
+        {launchDialog}
+        {popupPrompt}
+      </>
+    )
+  }
+
   if (!snapshot || !previewState) {
     return (
       <div className="boot">
@@ -678,23 +788,13 @@ export function App(): JSX.Element {
           </div>
           <div className="boot__station">{stationAccount}</div>
           {chainError ? <div className="boot__error">{chainError}</div> : null}
-          {nearMissing ? (
-            <div className="boot__error">Wallet library unavailable. Reload the page or check your connection.</div>
-          ) : null}
           <div className="boot__actions">
-            {walletAccount ? (
-              <span className="boot__account">WALLET {walletAccount}</span>
-            ) : (
-              <button className="btn btn--primary" onClick={() => void connectWallet()} disabled={connecting}>
-                {connecting ? 'Connecting…' : 'Connect wallet'}
-              </button>
-            )}
             <button className="btn btn--quiet" onClick={() => void refreshChain(false)}>
               Retry read
             </button>
-            {chainError && stationAccount !== STATION_ACCOUNT ? (
-              <button className="btn btn--quiet" onClick={() => void openStation(STATION_ACCOUNT)}>
-                Open {STATION_ACCOUNT}
+            {chainError ? (
+              <button className="btn btn--quiet" onClick={closeStation}>
+                {walletAccount ? 'My stations' : 'Back'}
               </button>
             ) : null}
           </div>
@@ -795,22 +895,8 @@ export function App(): JSX.Element {
         onBuy={buy}
       />
 
-      <LaunchStation
-        open={launchOpen}
-        onClose={() => setLaunchOpen(false)}
-        walletAccount={walletAccount}
-        balanceYocto={walletBalance}
-        myStations={myStations}
-        currentStation={stationAccount}
-        suggestedName={suggestedName}
-        step={launchStep}
-        busy={txPending !== null}
-        alert={message}
-        onDismissAlert={() => setMessage(null)}
-        onConnectWallet={() => void connectWallet()}
-        onLaunch={(name) => void launchStation(name)}
-        onOpenStation={openOwnStation}
-      />
+      {launchDialog}
+      {popupPrompt}
 
       {showResult ? (
         <MissionResult

@@ -25,14 +25,15 @@ pnpm install && pnpm --filter @derelict/game-model build
 pnpm --filter derelict-web dev       # open http://localhost:5173
 ```
 
-The app opens on the showcase station `isa02.derelict-factory.testnet`,
-read-only. To play, click **Connect wallet** with your own NEAR testnet wallet,
-then **Launch station**: the factory creates a station account owned by you
-(about 6.1 testnet NEAR, free from [near-faucet.io](https://near-faucet.io/)),
-and one more approval prepays its 12 visiting ships. Every command is signed
-by your wallet. There is no practice or simulated mode: the screen always
-reflects `get_state()` / `get_offers()` / `get_ledger()` read back from the
-contract. Pending stays pending until the chain confirms.
+Click **Connect wallet** with your own NEAR testnet wallet. The app opens the
+newest station that wallet owns; if it has none, **Launch your station**: the
+factory creates a station account owned by you (about 6.1 testnet NEAR, free
+from [near-faucet.io](https://near-faucet.io/)), and one more approval prepays
+its 12 visiting ships. Every command is signed by your wallet. There is no
+practice, demo or simulated data: the screen always reflects `get_state()` /
+`get_offers()` / `get_ledger()` read back from the contract, and pending stays
+pending until the chain confirms. Any station can be viewed read-only with
+`?station=<account>`.
 
 ## Why this is an "NFT that does something"
 
@@ -100,7 +101,6 @@ Full rules: [`docs/rules.md`](docs/rules.md). Judge walkthrough:
 - [x] Factory + keyless station accounts
 - [x] Sandbox integration tests (4/4)
 - [x] Web interface
-- [x] Live testnet showcase station `isa02.derelict-factory.testnet`
 - [x] Any wallet launches and plays its own station from the app
 - [ ] Demo video
 

@@ -33,7 +33,7 @@ export function InspectBuy({
   onUnlist,
   onBuy,
 }: InspectBuyProps) {
-  const [priceDraft, setPriceDraft] = useState('15')
+  const [priceDraft, setPriceDraft] = useState('')
   const panelRef = useDialogFocus<HTMLDivElement>(open, onClose)
 
   const isCaptain = walletAccount !== null && snapshot.owner === walletAccount
@@ -43,7 +43,7 @@ export function InspectBuy({
     if (snapshot.listingYocto !== null) {
       setPriceDraft(creditsOf(snapshot.listingYocto).toString())
     } else {
-      setPriceDraft('15')
+      setPriceDraft('')
     }
   }, [snapshot.listingYocto])
 
@@ -166,6 +166,7 @@ export function InspectBuy({
                   min={1}
                   step={1}
                   value={priceDraft}
+                  placeholder="Price in Cr"
                   onChange={(e) => setPriceDraft(e.target.value)}
                   style={{
                     minHeight: 44,

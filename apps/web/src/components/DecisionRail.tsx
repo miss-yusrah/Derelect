@@ -16,8 +16,8 @@ import {
   type StationState,
 } from '@derelict/game-model'
 import { IconClock, IconDock, IconFuel, IconLedger, IconWrench, IconChevron, IconWarning } from './icons'
-import { SUPPLIER_ACCOUNT } from '../config'
 import type { GameSnapshot } from '../lib/state'
+import { TRAFFIC_ESCROW_YOCTO } from '../lib/factory'
 import type { Offer } from '@derelict/game-model'
 
 export interface DecisionRailProps {
@@ -101,6 +101,15 @@ const ORDER: RowDef[] = [
   },
 ]
 
+/** NEAR account ID rules: 2–64 chars, lowercase parts joined by - or _, dot-separated. */
+function isNearAccountId(account: string): boolean {
+  return (
+    account.length >= 2 &&
+    account.length <= 64 &&
+    /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/.test(account)
+  )
+}
+
 function actionFor(kind: ActionKind['kind'], refuelUnits: number, supplier: string): ActionKind {
   switch (kind) {
     case 'standardDocking':
@@ -149,14 +158,19 @@ export function DecisionRail({
     walletAccount !== null && snapshot.repairSupplier === walletAccount && !snapshot.repairPaid
   const [selectedKind, setSelectedKind] = useState<ActionKind['kind']>('standardDocking')
   const [refuelUnits, setRefuelUnits] = useState(2)
-  const [supplier, setSupplier] = useState(SUPPLIER_ACCOUNT)
+  const [supplier, setSupplier] = useState('')
+  const supplierAccount = supplier.trim()
 
   const selected: ActionKind = useMemo(
-    () => actionFor(selectedKind, refuelUnits, supplier),
-    [selectedKind, refuelUnits, supplier],
+    () => actionFor(selectedKind, refuelUnits, supplierAccount),
+    [selectedKind, refuelUnits, supplierAccount],
   )
 
-  const preview: ActionPreview = previewActionAtBlock(previewState, selected, currentBlock)
+  const modelPreview = previewActionAtBlock(previewState, selected, currentBlock)
+  const preview: ActionPreview =
+    modelPreview.ok && selected.kind === 'commissionRepair' && !isNearAccountId(selected.supplier)
+      ? { ...modelPreview, ok: false, error: 'Enter the supplier as a valid NEAR account, e.g. name.testnet' }
+      : modelPreview
 
   const standardOffer = bestEligibleOffer(previewState, 'standard')
   const heavyOffer = bestEligibleOffer(previewState, 'heavy')
@@ -170,9 +184,11 @@ export function DecisionRail({
         { kind: 'refuel', units: refuelUnits },
         currentBlock,
       ),
+      // Rows show rule blockers only (cost, one repair at a time); the
+      // supplier account itself is validated in the preview pane.
       commissionRepair: previewActionAtBlock(
         previewState,
-        { kind: 'commissionRepair', supplier },
+        { kind: 'commissionRepair', supplier: supplierAccount || 'pending' },
         currentBlock,
       ),
       upgradeDock: previewActionAtBlock(previewState, { kind: 'upgradeDock' }, currentBlock),
@@ -213,7 +229,7 @@ export function DecisionRail({
       }
       return { def, preview: p, price, priceClass, sub }
     })
-  }, [previewState, refuelUnits, supplier, currentBlock])
+  }, [previewState, refuelUnits, supplierAccount, currentBlock])
 
   const selectedDef = ORDER.find((d) => d.key === selectedKind) as RowDef
 
@@ -273,7 +289,7 @@ export function DecisionRail({
             disabled={confirmBusy}
             onClick={onSeedTraffic}
           >
-            {confirmBusy ? 'Working…' : 'Fund visitor traffic (78 Cr)'}
+            {confirmBusy ? 'Working…' : `Fund visitor traffic (${formatCredits(TRAFFIC_ESCROW_YOCTO)} Cr)`}
           </button>
           <div className="pane__note">
             Escrow is held by the station and pays docking fees; unused offers stay refundable to you.
@@ -398,7 +414,7 @@ export function DecisionRail({
                   type="text"
                   value={supplier}
                   onChange={(e) => setSupplier(e.target.value)}
-                  placeholder="supplier.derelict.testnet"
+                  placeholder="supplier-account.testnet"
                   spellCheck={false}
                 />
               </div>

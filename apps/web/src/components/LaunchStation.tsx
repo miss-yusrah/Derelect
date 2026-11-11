@@ -21,13 +21,16 @@ export interface LaunchStationProps {
   balanceYocto: bigint | null | undefined
   /** Stations launched by this wallet; undefined while loading. */
   myStations: StationInfo[] | undefined
-  currentStation: string
+  /** Station on screen, or null when none is open. */
+  currentStation: string | null
   suggestedName: string
   step: LaunchStep | null
   busy: boolean
   alert: { text: string; tone: 'error' | 'info' } | null
   onDismissAlert: () => void
   onConnectWallet: () => void
+  /** Resolves true when `<name>.<factory>` is still free on chain. */
+  onCheckName: (name: string) => Promise<boolean>
   onLaunch: (name: string) => void
   onOpenStation: (account: string) => void
 }
@@ -50,6 +53,7 @@ export function LaunchStation({
   alert,
   onDismissAlert,
   onConnectWallet,
+  onCheckName,
   onLaunch,
   onOpenStation,
 }: LaunchStationProps) {
@@ -60,9 +64,27 @@ export function LaunchStation({
     if (open) setName(suggestedName)
   }, [open, suggestedName])
 
+  // Checked while typing so the Launch click goes straight to the wallet.
+  const [availability, setAvailability] = useState<'checking' | 'free' | 'taken' | 'unknown'>('checking')
+  useEffect(() => {
+    if (!open || stationNameProblem(name) !== null) return
+    let cancelled = false
+    setAvailability('checking')
+    const timer = window.setTimeout(() => {
+      onCheckName(name)
+        .then((free) => !cancelled && setAvailability(free ? 'free' : 'taken'))
+        .catch(() => !cancelled && setAvailability('unknown'))
+    }, 350)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [open, name, onCheckName])
+
   if (!open) return null
 
   const problem = stationNameProblem(name)
+  const nameReady = problem === null && availability === 'free'
   const shortfall =
     typeof balanceYocto === 'bigint' && balanceYocto < TOTAL_YOCTO + GAS_HEADROOM_YOCTO
   const launching = step !== null
@@ -136,11 +158,11 @@ export function LaunchStation({
             </table>
 
             <div className="launch__mine">
-              <div className="overlay__price-label">STATIONS YOU LAUNCHED</div>
+              <div className="overlay__price-label">YOUR STATIONS</div>
               {walletAccount === null ? (
                 <div className="pane__note">Connect a wallet to see your stations.</div>
               ) : myStations === undefined ? (
-                <div className="pane__note">Reading the factory index…</div>
+                <div className="pane__note">Reading your stations from chain…</div>
               ) : myStations.length === 0 ? (
                 <div className="pane__note">None yet — launch your first station.</div>
               ) : (
@@ -190,7 +212,12 @@ export function LaunchStation({
                   onChange={(e) => setName(e.target.value.toLowerCase())}
                 />
                 <div className="pane__cost" style={{ fontSize: 11.5 }}>
-                  {problem ?? stationAccountFor(name)}
+                  {problem ??
+                    (availability === 'taken'
+                      ? `${stationAccountFor(name)} is taken — choose another name`
+                      : availability === 'unknown'
+                        ? 'Could not check this name — edit it to retry'
+                        : stationAccountFor(name))}
                 </div>
                 <div className="pane__note">
                   Captain <span style={{ fontFamily: 'var(--font-mono)' }}>{walletAccount}</span>
@@ -211,14 +238,16 @@ export function LaunchStation({
                 ) : null}
                 <button
                   className={`btn btn--primary btn--block${launching ? ' is-busy' : ''}`}
-                  disabled={problem !== null || shortfall || launching || busy}
+                  disabled={!nameReady || shortfall || launching || busy}
                   onClick={() => onLaunch(name)}
                 >
                   {step === 'creating'
                     ? 'Approve in your wallet…'
                     : step === 'waiting'
                       ? 'Bringing the station online…'
-                      : 'Launch station'}
+                      : problem === null && availability === 'checking'
+                        ? 'Checking name…'
+                        : 'Launch station'}
                 </button>
                 <div className="pane__note">
                   1. <span style={{ fontFamily: 'var(--font-mono)' }}>create_station</span> on the factory

@@ -1,13 +1,6 @@
 {
   "network": "testnet",
-  "stationAccount": "isa02.derelict-factory.testnet",
   "factoryAccount": "derelict-factory.testnet",
-  "demoAccounts": {
-    "captain": "captain.derelict-factory.testnet",
-    "buyer": "buyer.derelict-factory.testnet",
-    "visitor": "visitor.derelict-factory.testnet",
-    "supplier": "supplier.derelict-factory.testnet"
-  },
   "rpcEndpoints": [
     "https://rpc.testnet.fastnear.com",
     "https://rpc.testnet.near.org"

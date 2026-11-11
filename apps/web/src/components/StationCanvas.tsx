@@ -15,10 +15,13 @@ export interface StationCanvasProps {
 
 import stationIllustration from '../assets/station-illustration.png'
 
-/* The cleaned concept illustration is 900x688. Overlay geometry is measured
-   on that source so labels, leader lines and hit areas stay put at any size. */
-const ART_W = 900
-const ART_H = 688
+/* Overlay geometry is measured on the 900x688 concept illustration. The
+   asset is that source with its panel-border pixels trimmed (2 px left/right,
+   5 px top, 4 px bottom), so the overlay viewBox starts at the trim offset. */
+const ART_X = 2
+const ART_Y = 5
+const ART_W = 896
+const ART_H = 679
 
 const DIM = '#8A938F'
 
@@ -105,14 +108,14 @@ export function StationCanvas({ snapshot: s, dockedShip, banner }: StationCanvas
           src={stationIllustration}
           width={ART_W}
           height={ART_H}
-          alt="DERELICT station RELAY-07 — orbital salvage platform"
+          alt={`DERELICT station ${s.stationAccount} — orbital salvage platform`}
           className="station-canvas-img"
         />
 
         <svg
           className="station-canvas-overlay"
-          viewBox={`0 0 ${ART_W} ${ART_H}`}
-          preserveAspectRatio="xMidYMid meet"
+          viewBox={`${ART_X} ${ART_Y} ${ART_W} ${ART_H}`}
+          preserveAspectRatio="xMidYMid slice"
           aria-label="Station module status"
           role="group"
         >
