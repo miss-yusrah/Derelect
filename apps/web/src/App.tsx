@@ -95,8 +95,6 @@ async function loadView(runtime: NearRuntime, account: string): Promise<ChainVie
 /** Ship arrival length; the new ledger fee highlights once it has docked. */
 const ARRIVAL_MS = 1100
 
-const GUIDE_SEEN_KEY = 'derelict.guide.seen'
-
 function assertCaptain(snapshot: GameSnapshot, accountId: string): void {
   if (snapshot.owner !== accountId) {
     throw new Error(
@@ -162,22 +160,9 @@ export function App(): JSX.Element {
   // Launch-your-own-station dialog.
   const [launchOpen, setLaunchOpen] = useState(false)
 
-  // How-it-works guide: shown once on a first visit, reopenable from the header.
-  const [guideOpen, setGuideOpen] = useState(() => {
-    try {
-      return window.localStorage.getItem(GUIDE_SEEN_KEY) === null
-    } catch {
-      return false
-    }
-  })
-  const closeGuide = useCallback(() => {
-    setGuideOpen(false)
-    try {
-      window.localStorage.setItem(GUIDE_SEEN_KEY, '1')
-    } catch {
-      // Storage unavailable: the guide simply opens again next visit.
-    }
-  }, [])
+  // How-it-works guide, opened from the header or the connect screen.
+  const [guideOpen, setGuideOpen] = useState(false)
+  const closeGuide = useCallback(() => setGuideOpen(false), [])
   const [launchStep, setLaunchStep] = useState<LaunchStep | null>(null)
   const [walletBalance, setWalletBalance] = useState<bigint | null | undefined>(undefined)
 
