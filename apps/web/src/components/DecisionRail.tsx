@@ -250,6 +250,11 @@ export function DecisionRail({
         )}
       </div>
 
+      <div className="next-step" role="status">
+        <span className="next-step__label">NEXT STEP</span>
+        {nextStep({ snapshot, walletAccount, isCaptain, needsTraffic, confirmBusy, canClaimRepair })}
+      </div>
+
       {canClaimRepair ? (
         <div className="pane" aria-label="Supplier claim">
           <div className="pane__preview-tag">
@@ -487,6 +492,40 @@ export function DecisionRail({
       )}
     </aside>
   )
+}
+
+/** One plain sentence telling the player what to do now, from live state. */
+function nextStep({
+  snapshot,
+  walletAccount,
+  isCaptain,
+  needsTraffic,
+  confirmBusy,
+  canClaimRepair,
+}: {
+  snapshot: GameSnapshot
+  walletAccount: string | null
+  isCaptain: boolean
+  needsTraffic: boolean
+  confirmBusy: boolean
+  canClaimRepair: boolean
+}): string {
+  if (confirmBusy) return 'Approve the transaction in your wallet, then wait for the chain to confirm it.'
+  if (!walletAccount) return 'Connect your NEAR testnet wallet to command a station.'
+  if (canClaimRepair) return 'You are this station’s repair supplier: claim your repair fee below.'
+  if (!isCaptain) {
+    return snapshot.listingYocto !== null
+      ? 'This station is for sale. Buy it to take command, or launch your own station.'
+      : 'This station belongs to someone else. Launch your own station to play.'
+  }
+  if (snapshot.complete) {
+    return snapshot.outcome.success
+      ? 'Campaign won. Your score is the final treasury — launch a new station to play again.'
+      : 'Campaign lost. Launch a new station to try a different route.'
+  }
+  if (needsTraffic) return 'Fund visitor traffic so ships can dock — one wallet approval.'
+  if (snapshot.turn >= 6) return 'Last turn: your score is the operating funds after this action.'
+  return `Turn ${snapshot.turn} of 6 — pick an action, read its preview, then Confirm.`
 }
 
 function queueText(offer: Offer | null, kind: string): string {

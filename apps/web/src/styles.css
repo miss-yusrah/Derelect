@@ -1818,6 +1818,118 @@ button {
   gap: var(--sp-2);
 }
 
+/* How it works guide */
+.guide {
+  width: min(760px, 100%);
+}
+
+.guide__title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.guide__body {
+  padding: var(--sp-4) var(--sp-5);
+  display: grid;
+  gap: var(--sp-4);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.guide__lead {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.guide__section h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--orange);
+}
+
+.guide__section p,
+.guide__section ol,
+.guide__section ul {
+  margin: 0;
+}
+
+.guide__section ol,
+.guide__section ul {
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.guide__section strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.guide__section a {
+  color: var(--orange);
+}
+
+.guide__table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.guide__table th,
+.guide__table td {
+  text-align: left;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line-faint);
+}
+
+.guide__table th {
+  width: 38%;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.guide__hint {
+  margin-top: 8px;
+  color: var(--ink-2);
+}
+
+.guide__hint summary {
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.guide__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 var(--sp-5) var(--sp-4);
+}
+
+/* Next-step hint at the top of the decision rail */
+.next-step {
+  border-left: 2px solid var(--orange);
+  background: var(--surface-2);
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.next-step__label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--orange);
+  margin-bottom: 2px;
+}
+
 /* Launch-your-station dialog */
 .launch__name {
   min-height: 44px;
@@ -2130,6 +2242,21 @@ button {
 
 .boot__note a {
   color: var(--orange);
+}
+
+.boot__pitch {
+  margin: 0;
+  max-width: 440px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  letter-spacing: normal;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+/* The connect screen is a destination, not a loading state: no pulse. */
+.boot--welcome {
+  animation: none;
 }
 
 @keyframes boot-pulse {

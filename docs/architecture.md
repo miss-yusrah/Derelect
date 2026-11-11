@@ -35,7 +35,7 @@ actions and purchases bind to the current revision; stale submissions reject.
 
 The visible account balance is **not** the score; `operating` is the score.
 `get_buckets()` exposes every bucket plus a raw-balance reconciliation
-difference so a judge can account for every yoctoNEAR.
+difference so anyone can account for every yoctoNEAR.
 
 ## Docking income escrow
 

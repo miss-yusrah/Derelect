@@ -12,6 +12,7 @@ export interface WelcomeProps {
   onConnectWallet: () => void
   onDisconnectWallet: () => void
   onOpenLaunch: () => void
+  onOpenGuide: () => void
 }
 
 const FAUCET_URL = 'https://near-faucet.io/'
@@ -27,11 +28,16 @@ export function Welcome({
   onConnectWallet,
   onDisconnectWallet,
   onOpenLaunch,
+  onOpenGuide,
 }: WelcomeProps) {
   return (
-    <div className="boot">
+    <div className="boot boot--welcome">
       <div className="boot__panel">
         <div className="boot__wordmark">DERELICT</div>
+        <p className="boot__pitch">
+          A six-turn strategy game: run a battered salvage station, dock ships for credits, and finish with the
+          biggest treasury. Your station is a NEAR NFT that owns its own money.
+        </p>
         <div className="boot__status">{statusLine(walletAccount, walletChecked, ownedStations)}</div>
         {walletAccount ? <div className="boot__station">{walletAccount}</div> : null}
         {nearMissing ? (
@@ -54,6 +60,9 @@ export function Welcome({
               </button>
             </>
           ) : null}
+          <button className="btn btn--quiet" onClick={onOpenGuide}>
+            How it works
+          </button>
         </div>
 
         <div className="boot__note">

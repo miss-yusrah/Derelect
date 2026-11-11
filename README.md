@@ -2,107 +2,108 @@
 
 **Buy the station. Inherit its condition and commitments.**
 
-DERELICT is a six-turn orbital salvage strategy game built for the NEAR
-hackathon track **NFTs That Do Something**. Every station is a real NEAR
-account backed by an NEP-171 NFT that **owns its own money**: it holds
-operating funds, visiting ships' escrow, and repair obligations as separate
-treasury buckets. You can sell the operating station mid-contract — the new
-captain inherits its fuel, damage, money, and the original repair
-supplier's claim.
+DERELICT is a six-turn strategy game about running a battered orbital salvage
+station. You dock visiting ships to earn credits, manage fuel and hull damage,
+and decide when a repair is worth the money. When the sixth turn ends, the
+money left in the station's treasury is your score.
 
-> *"This station owns its operating funds. I damage it earning a docking fee,
-> then reserve money for repairs. Now another captain buys it while that
-> repair is unfinished. My old instructions no longer work. The new captain
-> inherits the station's condition, and the original repair supplier still
-> gets paid."*
+The station is not a picture in a database. It is an NFT on NEAR that is also
+a real NEAR account, and it **owns its own money**: its operating treasury,
+the fees visiting ships have prepaid, and any repair money it owes a supplier
+are all held by the station itself. Sell the station mid-campaign and the
+buyer inherits everything — its fuel, its damage, its treasury and its unpaid
+repair bill — while the original supplier still gets paid.
 
 ![DERELICT station](apps/web/src/assets/station-illustration.png)
 
-## Start the live station (NEAR testnet)
+## How it works
 
-```bash
-pnpm install && pnpm --filter @derelict/game-model build
-pnpm --filter derelict-web dev       # open http://localhost:5173
-```
+1. **Connect a wallet.** Use any NEAR testnet wallet (Meteor, Intear, …).
+   Testnet NEAR is free from [near-faucet.io](https://near-faucet.io/).
+2. **Launch your station.** About 6.1 testnet NEAR in two approvals: the
+   station account is created with 6 NEAR held for its contract storage and
+   10 credits of opening funds, then you prepay its 12 visiting ships (78
+   credits of escrow, refundable if unused). Every launched station is
+   owned by the wallet that launched it.
+3. **Play six turns.** Each turn, pick one action, check its preview, and
+   confirm it in your wallet. The screen updates only after the chain
+   confirms the move.
+4. **Finish with the biggest treasury.** You win if the hull survives and you
+   served at least three ships. The best possible score is 27 credits.
+5. **Sell or buy at any point.** List your station for a price, or buy one
+   that is listed. Ownership moves with everything the station carries.
 
-Click **Connect wallet** with your own NEAR testnet wallet. The app opens the
-newest station that wallet owns; if it has none, **Launch your station**: the
-factory creates a station account owned by you (about 6.1 testnet NEAR, free
-from [near-faucet.io](https://near-faucet.io/)), and one more approval prepays
-its 12 visiting ships. Every command is signed by your wallet. There is no
-practice, demo or simulated data: the screen always reflects `get_state()` /
-`get_offers()` / `get_ledger()` read back from the contract, and pending stays
-pending until the chain confirms. Any station can be viewed read-only with
-`?station=<account>`.
+The app opens on a connect screen and then shows the stations your wallet
+owns; **How it works** in the app walks through all of this. Any station can
+also be viewed read-only with `?station=<account>`.
 
-## Why this is an "NFT that does something"
+## Rules at a glance
 
-| Capability | Where |
-| --- | --- |
-| NFT as a live NEAR account | each station = a contract created by [`contracts/factory`](contracts/factory) with **zero access keys** — the contract is the sole controller |
-| Asset that owns money | treasury buckets inside the station contract: operating, visitor escrow, repair reserve, seller proceeds, pending payouts (`get_buckets()` reconciles every yoctoNEAR) |
-| NEP-171 compliant | `nft_token(s)`, `nft_total_supply`, `nft_supply_for_owner`, `nft_metadata`, `nft_transfer` + full receiver path (`nft_transfer_call`/`nft_resolve_transfer`) |
-| Dynamic state | fuel/hull/upgrade/turn/epoch/revision live on chain; ownership epochs bump on **every** ownership change, including receiver rollbacks |
-| Safe handover | exact-price purchase (`purchase(expected_revision)`) moves ownership, bumps epoch, records the seller's fixed receivable in one receipt |
-| Creditor rights persist | supplier collects its repair fee by a fixed block threshold even after the captain changed; visitor rebates and seller proceeds are fixed to their accounts |
-
-## Quick verification
-
-```bash
-cargo test -p derelict-station        # 18 contract unit tests
-cd tests/integration && cargo test    # 4 sandbox tests incl. the full judging scenario
-pnpm --filter @derelict/game-model test   # published strategies: 26.000 / 27.000 credits
-```
-
-The integration test `full_judging_repair_route_with_midrepair_sale` runs the
-exact demo fight on a sandbox: dock, damage, commission repair, sell
-mid-repair, old captain rejected, repair effect lands under the new captain,
-supplier gets paid, campaign wins at 27 credits.
-
-## Repository layout
-
-```text
-contracts/station/        Station NFT, game, treasury, offers and sale
-contracts/factory/        Station deployment and discovery index
-apps/web/                 Game interface and wallet integration
-packages/game-model/      Pure transition model, fixtures, previews
-tests/integration/        near-workspaces sandbox scenario tests
-docs/                     Architecture, frozen rules, judge's guide, threat model
-```
-
-## Playing turns (rules in one look)
-
-1 credit = 0.001 testnet NEAR. Start: 10 credits, 4 fuel, 2 hull. Win with
-hull ≥ 1 and ≥ 3 ships served; **score = final operating treasury** (max 27).
+1 credit = 0.001 testnet NEAR. Every station starts with 10 credits, 4 fuel
+and 2 hull (fuel holds 6, hull holds 3).
 
 | Action | Cost | Result |
 | --- | --- | --- |
-| Standard docking | 1 fuel | +3 Cr (+5 upgraded), serves 1 ship |
-| Heavy docking | 2 fuel + 1 hull | +8 Cr, serves 1 ship |
-| Refuel (1–4 units) | 2 Cr each | +fuel |
-| Commission repair | reserves 4 Cr | +2 hull (cap 3) after next valid action |
-| Upgrade dock | 4 Cr | standard fee becomes 5 Cr |
-| Wait | — | advance the turn |
+| Standard docking | 1 fuel | +3 credits (+5 with an upgraded dock), one ship served |
+| Heavy docking | 2 fuel and 1 hull | +8 credits, one ship served |
+| Refuel | 2 credits per unit (1–4) | more fuel |
+| Commission repair | 4 credits set aside | +2 hull after your next action |
+| Upgrade dock | 4 credits, once | standard docking pays 5 credits |
+| Wait | — | the turn passes |
 
-Full rules: [`docs/rules.md`](docs/rules.md). Judge walkthrough:
-[`docs/judging.md`](docs/judging.md). Security posture:
-[`docs/threat-model.md`](docs/threat-model.md).
+- Each action uses one of your six turns; a rejected action uses none.
+- Docking needs a visiting ship that has prepaid, and a hull above zero.
+- **Score** = the station's operating treasury after turn 6.
+- **Win** = hull of at least 1 and at least 3 ships served.
+- Selling, buying, funding visitors and claiming payments do not use turns.
 
-## Track fit
+Full rules: [`docs/rules.md`](docs/rules.md).
 
-- Primary: **NFTs That Do Something** — NFT as account, ownership with behavior.
-- Secondary: **Games With Real Economies** — real native NEAR flows, real
-  escrow, real receipts; the score is a live treasury, not a number.
+## What is real
 
-## Status / known limitations
+Everything on screen is read back from the station contract; nothing is
+simulated, and a pending transaction stays pending until the chain confirms
+it.
 
-- [x] Shared transition model + fixtures (TS)
-- [x] Station contract: ownership, buckets, offers, repair, sale, payouts
-- [x] Factory + keyless station accounts
-- [x] Sandbox integration tests (4/4)
-- [x] Web interface
-- [x] Any wallet launches and plays its own station from the app
-- [ ] Demo video
+| What | How |
+| --- | --- |
+| The station is an account | Each station is created by [`contracts/factory`](contracts/factory) with **no access keys** — its contract is the only thing that can move its money |
+| It owns its money | Separate treasury buckets for operating funds, visitor escrow, the repair reserve, seller proceeds and pending payouts; `get_buckets()` accounts for every yoctoNEAR |
+| It is a standard NFT | NEP-171: `nft_token(s)`, `nft_total_supply`, `nft_supply_for_owner`, `nft_metadata`, `nft_transfer`, and the full `nft_transfer_call` receiver path |
+| Its state lives on chain | Fuel, hull, upgrade, turn, owner epoch and revision; the epoch increases on every change of owner |
+| Sales are safe | `purchase(expected_revision)` pays exactly the listed price to the seller and moves ownership in one step |
+| Debts survive a sale | The repair supplier, visitor refunds and seller proceeds stay owed to the same accounts whoever owns the station |
 
-Out of scope by design: approvals/marketplaces, custom tokens, deleting
-stations. Game-over permits claims settlement forever.
+## Run it locally
+
+```bash
+pnpm install
+pnpm --filter @derelict/game-model build
+pnpm --filter derelict-web dev       # open http://localhost:5173
+```
+
+Tests:
+
+```bash
+cargo test -p derelict-station            # contract unit tests
+cd tests/integration && cargo test        # sandbox scenario tests, incl. a mid-repair sale
+pnpm --filter @derelict/game-model test   # rules model and the 26 / 27 credit strategies
+```
+
+## Project layout
+
+```text
+contracts/station/        Station NFT: game rules, treasury, offers, sale
+contracts/factory/        Creates stations and keeps the station index
+apps/web/                 The game interface and wallet integration
+packages/game-model/      Rules model used for action previews
+tests/integration/        Sandbox scenario tests
+docs/                     Rules, architecture, threat model, on-chain verification
+```
+
+## Documentation
+
+- [`docs/rules.md`](docs/rules.md) — complete rules
+- [`docs/architecture.md`](docs/architecture.md) — how the station, factory and app fit together
+- [`docs/verify.md`](docs/verify.md) — checking a station's state and money on chain
+- [`docs/threat-model.md`](docs/threat-model.md) — security assumptions

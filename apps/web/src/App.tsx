@@ -34,6 +34,7 @@ import { InspectBuy } from './components/InspectBuy'
 import { MissionResult } from './components/MissionResult'
 import { LaunchStation, type LaunchStep } from './components/LaunchStation'
 import { Welcome } from './components/Welcome'
+import { HowItWorks } from './components/HowItWorks'
 import { NO_FX, confirmedChanges, moduleForAction, type ModuleId, type StationFx } from './lib/stationFx'
 import { onBlockedPopup, type BlockedPopup } from './lib/popupGuard'
 import { Banner } from './components/primitives'
@@ -93,6 +94,8 @@ async function loadView(runtime: NearRuntime, account: string): Promise<ChainVie
 
 /** Ship arrival length; the new ledger fee highlights once it has docked. */
 const ARRIVAL_MS = 1100
+
+const GUIDE_SEEN_KEY = 'derelict.guide.seen'
 
 function assertCaptain(snapshot: GameSnapshot, accountId: string): void {
   if (snapshot.owner !== accountId) {
@@ -158,6 +161,23 @@ export function App(): JSX.Element {
 
   // Launch-your-own-station dialog.
   const [launchOpen, setLaunchOpen] = useState(false)
+
+  // How-it-works guide: shown once on a first visit, reopenable from the header.
+  const [guideOpen, setGuideOpen] = useState(() => {
+    try {
+      return window.localStorage.getItem(GUIDE_SEEN_KEY) === null
+    } catch {
+      return false
+    }
+  })
+  const closeGuide = useCallback(() => {
+    setGuideOpen(false)
+    try {
+      window.localStorage.setItem(GUIDE_SEEN_KEY, '1')
+    } catch {
+      // Storage unavailable: the guide simply opens again next visit.
+    }
+  }, [])
   const [launchStep, setLaunchStep] = useState<LaunchStep | null>(null)
   const [walletBalance, setWalletBalance] = useState<bigint | null | undefined>(undefined)
 
@@ -792,6 +812,8 @@ export function App(): JSX.Element {
     />
   )
 
+  const guideDialog = <HowItWorks open={guideOpen} onClose={closeGuide} />
+
   const popupPrompt = blockedPopup ? (
     <div className="popup-prompt" role="alertdialog" aria-modal="true" aria-label="Open your wallet">
       <div className="popup-prompt__panel">
@@ -825,8 +847,10 @@ export function App(): JSX.Element {
           onConnectWallet={() => void connectWallet()}
           onDisconnectWallet={() => void disconnectWallet()}
           onOpenLaunch={openLaunch}
+          onOpenGuide={() => setGuideOpen(true)}
         />
         {launchDialog}
+        {guideDialog}
         {popupPrompt}
       </>
     )
@@ -873,6 +897,7 @@ export function App(): JSX.Element {
         onDisconnectWallet={() => void disconnectWallet()}
         onOpenInspect={() => setInspectOpen(true)}
         onOpenLaunch={openLaunch}
+        onOpenGuide={() => setGuideOpen(true)}
       />
 
       <div className="shell">
@@ -954,6 +979,7 @@ export function App(): JSX.Element {
       />
 
       {launchDialog}
+      {guideDialog}
       {popupPrompt}
 
       {showResult ? (
