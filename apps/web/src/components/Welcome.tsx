@@ -61,7 +61,7 @@ export function Welcome({
             </>
           ) : null}
           <button className="btn btn--quiet" onClick={onOpenGuide}>
-            New here? How it works
+            How it works
           </button>
         </div>
 
