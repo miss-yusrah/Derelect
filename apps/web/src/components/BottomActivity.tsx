@@ -7,12 +7,22 @@ export interface BottomActivityProps {
   events: LedgerRow[]
   /** 1-based next turn (or CAMPAIGN_TURNS+1 when complete). */
   currentTurn: number
+  /** Rows with a higher sequence were confirmed in this session (highlight them). */
+  newAfterSequence?: number | null
+  /** Wait for the ship arrival before highlighting a docking fee. */
+  highlightDelayMs?: number
   onOpenLedger: () => void
 }
 
 const VISIBLE_ROWS = 4
 
-export function BottomActivity({ events, currentTurn, onOpenLedger }: BottomActivityProps) {
+export function BottomActivity({
+  events,
+  currentTurn,
+  newAfterSequence = null,
+  highlightDelayMs = 0,
+  onOpenLedger,
+}: BottomActivityProps) {
   const recent = events.slice(-VISIBLE_ROWS).reverse()
   const sourceStamp = 'SOURCE: CONTRACT get_ledger()'
 
@@ -36,7 +46,11 @@ export function BottomActivity({ events, currentTurn, onOpenLedger }: BottomActi
               const deltaClass =
                 row.deltaYocto > 0n ? 'pos' : row.deltaYocto < 0n ? 'neg' : ''
               return (
-                <li className="logrow" key={`${row.sequence}-${row.kind}`}>
+                <li
+                  className={`logrow${isNew(row.sequence, newAfterSequence) ? ' logrow--new' : ''}`}
+                  style={isNew(row.sequence, newAfterSequence) ? { animationDelay: `${highlightDelayMs}ms` } : undefined}
+                  key={`${row.sequence}-${row.kind}`}
+                >
                   <span className="logrow__turn">T{Math.max(row.turn, 0)}</span>
                   <span className="logrow__kind">{actionLabel(row.kind)}</span>
                   <span className="logrow__text" title={row.text}>
@@ -85,4 +99,8 @@ export function BottomActivity({ events, currentTurn, onOpenLedger }: BottomActi
       </section>
     </div>
   )
+}
+
+function isNew(sequence: number, newAfterSequence: number | null): boolean {
+  return newAfterSequence !== null && sequence > newAfterSequence
 }

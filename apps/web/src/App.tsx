@@ -34,6 +34,7 @@ import { InspectBuy } from './components/InspectBuy'
 import { MissionResult } from './components/MissionResult'
 import { LaunchStation, type LaunchStep } from './components/LaunchStation'
 import { Welcome } from './components/Welcome'
+import { NO_FX, confirmedChanges, moduleForAction, type ModuleId, type StationFx } from './lib/stationFx'
 import { onBlockedPopup, type BlockedPopup } from './lib/popupGuard'
 import { Banner } from './components/primitives'
 import { IconClose } from './components/icons'
@@ -51,6 +52,8 @@ interface ChainView {
   offers: Offer[]
   rows: LedgerRow[]
   blockHeight: number
+  /** An nft_transfer_call is waiting on its receiver. */
+  locked: boolean
 }
 
 interface TxContext {
@@ -62,6 +65,8 @@ interface TxContext {
 
 interface TxSpec {
   kind: TxKind
+  /** Station module the canvas marks as pending / failed (null: whole station). */
+  module: ModuleId | null
   /** Shown when there is no wallet session. */
   connectPrompt: string
   submit: (ctx: TxContext) => Promise<unknown>
@@ -82,8 +87,12 @@ async function loadView(runtime: NearRuntime, account: string): Promise<ChainVie
     offers: offers.map(chainOfferToModel),
     rows: ledgerRowsFromChain(ledger),
     blockHeight: state.block_height,
+    locked: state.locked,
   }
 }
+
+/** Ship arrival length; the new ledger fee highlights once it has docked. */
+const ARRIVAL_MS = 1100
 
 function assertCaptain(snapshot: GameSnapshot, accountId: string): void {
   if (snapshot.owner !== accountId) {
@@ -199,11 +208,45 @@ export function App(): JSX.Element {
   /* Chain refresh (read-only)                                           */
   /* ------------------------------------------------------------------ */
 
-  const applyView = useCallback((view: ChainView) => {
-    chainRef.current = view
-    setChainState(view)
-    setChainError(null)
+  // Canvas effects derived from confirmed read-backs (never from pending txs).
+  const [fx, setFx] = useState<StationFx>(NO_FX)
+  const fxTimers = useRef<number[]>([])
+  const clearFxLater = useCallback((patch: Partial<StationFx>, ms: number) => {
+    fxTimers.current.push(window.setTimeout(() => setFx((current) => ({ ...current, ...patch })), ms))
   }, [])
+  useEffect(() => () => fxTimers.current.forEach((t) => window.clearTimeout(t)), [])
+
+  /**
+   * Show a read-back. A baseline (first read of a station, or a page load)
+   * restores state silently; later reads of the same station play only what
+   * the chain confirmed since the previous read.
+   */
+  const applyView = useCallback(
+    (view: ChainView, baseline = false) => {
+      const previous = chainRef.current
+      chainRef.current = view
+      setChainState(view)
+      setChainError(null)
+      if (baseline || !previous || previous.snapshot.stationAccount !== view.snapshot.stationAccount) {
+        setFx((current) => ({ ...NO_FX, pendingModule: current.pendingModule }))
+        return
+      }
+      const changes = confirmedChanges(previous, view)
+      const key = Date.now()
+      if (changes.newAfterSequence === null && changes.previousOwner === null) return
+      setFx((current) => ({
+        ...current,
+        arrival: changes.docked ? key : current.arrival,
+        restoration: changes.repaired ? key : current.restoration,
+        ownerSwap: changes.previousOwner !== null ? { previous: changes.previousOwner, key } : current.ownerSwap,
+        newAfterSequence: changes.newAfterSequence ?? current.newAfterSequence,
+        ledgerDelayMs: changes.docked ? ARRIVAL_MS : 0,
+      }))
+      if (changes.previousOwner !== null) clearFxLater({ ownerSwap: null }, 700)
+      if (changes.newAfterSequence !== null) clearFxLater({ newAfterSequence: null }, 4000)
+    },
+    [clearFxLater],
+  )
 
   const refreshChain = useCallback(
     async (announce: boolean): Promise<ChainView | null> => {
@@ -245,7 +288,7 @@ export function App(): JSX.Element {
           const view = await loadView(runtime, account)
           stationRef.current = account
           setStationAccount(account)
-          applyView(view)
+          applyView(view, true)
           setResultDismissed(false)
           setInspectOpen(false)
           const url = new URL(window.location.href)
@@ -361,6 +404,7 @@ export function App(): JSX.Element {
         return false
       }
       setTxPending(spec.kind)
+      setFx((current) => ({ ...current, pendingModule: spec.module, failure: null }))
       setMessage(null)
       pollingRef.current = true
       try {
@@ -380,6 +424,9 @@ export function App(): JSX.Element {
         return true
       } catch (error) {
         const text = txErrorText(error)
+        const key = Date.now()
+        setFx((current) => ({ ...current, failure: { module: spec.module, text, key } }))
+        clearFxLater({ failure: null }, 2800)
         setMessage({
           text: /stale/i.test(text)
             ? `${text} — the station changed since this screen was read. Review the refreshed numbers and try again.`
@@ -391,15 +438,17 @@ export function App(): JSX.Element {
       } finally {
         pollingRef.current = false
         setTxPending(null)
+        setFx((current) => ({ ...current, pendingModule: null }))
       }
     },
-    [confirmSettled, refreshChain],
+    [clearFxLater, confirmSettled, refreshChain],
   )
 
   const confirmAction = useCallback(
     (action: ActionKind) => {
       void runTx({
         kind: 'act',
+        module: moduleForAction(action.kind),
         connectPrompt: 'Connect a wallet to command this station',
         submit: ({ contract, view: { snapshot }, accountId }) => {
           assertCaptain(snapshot, accountId)
@@ -419,6 +468,7 @@ export function App(): JSX.Element {
       }
       void runTx({
         kind: 'list',
+        module: null,
         connectPrompt: 'Connect a wallet to list this station',
         submit: ({ contract, view: { snapshot }, accountId }) => {
           assertCaptain(snapshot, accountId)
@@ -433,6 +483,7 @@ export function App(): JSX.Element {
   const unlist = useCallback(() => {
     void runTx({
       kind: 'unlist',
+      module: null,
       connectPrompt: 'Connect a wallet to change this listing',
       submit: ({ contract, view: { snapshot }, accountId }) => {
         assertCaptain(snapshot, accountId)
@@ -445,6 +496,7 @@ export function App(): JSX.Element {
   const buy = useCallback(() => {
     void runTx({
       kind: 'purchase',
+      module: null,
       connectPrompt: 'Connect a wallet to buy this station',
       // The buyer pays the price they were shown; the contract rejects a stale revision.
       submit: ({ contract, view: { snapshot }, accountId }) => {
@@ -465,6 +517,7 @@ export function App(): JSX.Element {
   const claimRepair = useCallback(() => {
     void runTx({
       kind: 'claimRepair',
+      module: 'repair',
       connectPrompt: 'Connect the supplier wallet to claim the repair fee',
       submit: ({ contract, view: { snapshot }, accountId }) => {
         if (snapshot.repairSupplier !== accountId) throw new Error('Only the recorded supplier may claim')
@@ -483,6 +536,7 @@ export function App(): JSX.Element {
     () =>
       runTx({
         kind: 'seed',
+        module: 'dock',
         connectPrompt: 'Connect the captain wallet to fund visitor traffic',
         submit: ({ contract, view: { snapshot, offers }, accountId }) => {
           assertCaptain(snapshot, accountId)
@@ -822,12 +876,14 @@ export function App(): JSX.Element {
       />
 
       <div className="shell">
-        <StatusRail snapshot={snapshot} />
+        <StatusRail snapshot={snapshot} ownerSwap={fx.ownerSwap} />
 
         <StationCanvas
           snapshot={snapshot}
           dockedShip={dockedShip}
           spots={offerCounts}
+          fx={fx}
+          transferLocked={chainState?.locked ?? false}
           banner={
             banner ? (
               <Banner
@@ -871,6 +927,8 @@ export function App(): JSX.Element {
       <BottomActivity
         events={rows}
         currentTurn={snapshot.turn}
+        newAfterSequence={fx.newAfterSequence}
+        highlightDelayMs={fx.ledgerDelayMs}
         onOpenLedger={() => setLedgerOpen(true)}
       />
 

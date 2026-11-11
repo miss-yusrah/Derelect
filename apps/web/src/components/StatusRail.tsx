@@ -8,9 +8,11 @@ export interface StatusRailProps {
   snapshot: GameSnapshot
   /** Index of the last cell that just changed (fuel gauge flash), or null. */
   fuelFlashCell?: number | null
+  /** A confirmed ownership change to animate (previous captain), or null. */
+  ownerSwap?: { previous: string; key: number } | null
 }
 
-export function StatusRail({ snapshot, fuelFlashCell = null }: StatusRailProps) {
+export function StatusRail({ snapshot, fuelFlashCell = null, ownerSwap = null }: StatusRailProps) {
   const stationTag = 'ON-GRID // ORBITAL SALVAGE'
 
   const operating = formatCredits(snapshot.operatingYocto)
@@ -88,8 +90,15 @@ export function StatusRail({ snapshot, fuelFlashCell = null }: StatusRailProps) 
       {/* Tertiary: identity and ledger coordinates. */}
       <div className="rail-left__captain">
         <span className="k">CAPTAIN (NFT OWNER)</span>
-        <span className="v" title={snapshot.owner}>
-          {snapshot.owner}
+        <span className="v captain-badge" title={snapshot.owner}>
+          {ownerSwap ? (
+            <span className="captain-badge__out" key={`out-${ownerSwap.key}`} aria-hidden="true">
+              {ownerSwap.previous}
+            </span>
+          ) : null}
+          <span className={ownerSwap ? 'captain-badge__in' : undefined} key={`in-${ownerSwap?.key ?? 0}`}>
+            {snapshot.owner}
+          </span>
         </span>
         <span className="k">EPOCH / REVISION</span>
         <span className="v">
