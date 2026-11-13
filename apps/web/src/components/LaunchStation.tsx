@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { formatCredits } from '@derelict/game-model'
+import { cr } from '../lib/format'
 import { STATION_FUNDING_YOCTO } from '../config'
 import {
   MAX_STATION_NAME,
@@ -90,151 +90,144 @@ export function LaunchStation({
   const launching = step !== null
 
   return (
-    <div className="overlay-scrim" onClick={launching ? undefined : onClose}>
+    <div className="scrim" onClick={launching ? undefined : onClose}>
       <div
-        className="overlay"
+        className="dialog dialog--split"
         role="dialog"
         aria-modal="true"
-        aria-label="Launch your own station"
+        aria-labelledby="stations-title"
         ref={panelRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="overlay__head">
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 700, letterSpacing: '0.08em' }}>
-            LAUNCH YOUR STATION
-          </span>
-          <span className="overlay__note">FACTORY // NEAR TESTNET</span>
-          <button
-            className="iconbtn"
-            onClick={onClose}
-            disabled={launching}
-            aria-label="Close launcher"
-            style={{ marginLeft: 'auto' }}
-          >
-            <IconClose size={14} />
+        <div className="dialog__head">
+          <div>
+            <h2 className="dialog-title" id="stations-title">
+              Stations
+            </h2>
+            <p className="dialog-sub">Open one you command, or launch a new one from the station factory.</p>
+          </div>
+          <button className="iconbtn" onClick={onClose} disabled={launching} aria-label="Close stations">
+            <IconClose size={16} />
           </button>
         </div>
 
-        <div className="overlay__body">
+        <div className="dialog__body">
           <div>
             {alert ? (
-              <div
-                className={`alert${alert.tone === 'error' ? ' alert--error' : ' alert--info'}`}
-                role="alert"
-                style={{ marginBottom: 12 }}
-              >
-                <IconWarning size={14} style={{ marginTop: 2, flex: 'none' }} />
+              <div className={`inline-alert inline-alert--${alert.tone}`} role="alert">
+                <IconWarning size={15} />
                 <span>{alert.text}</span>
-                <button className="iconbtn alert__close" onClick={onDismissAlert} aria-label="Dismiss">
-                  <IconClose size={13} />
+                <button className="iconbtn" onClick={onDismissAlert} aria-label="Dismiss">
+                  <IconClose size={14} />
                 </button>
               </div>
             ) : null}
 
-            <table className="inspect-table">
-              <caption>WHAT YOUR WALLET PAYS — EVERY YOCTO STAYS ON CHAIN</caption>
+            <h3 className="side-title">Your stations</h3>
+            {walletAccount === null ? (
+              <p className="side-note">Connect a wallet to see the stations you command.</p>
+            ) : myStations === undefined ? (
+              <p className="side-note">Reading your stations from the chain…</p>
+            ) : myStations.length === 0 ? (
+              <p className="side-note">None yet. Launch your first one.</p>
+            ) : (
+              <ul className="stationlist">
+                {myStations.map((info) => (
+                  <li key={info.station_account}>
+                    <span className="stationlist__name">{info.station_account.split('.')[0]}</span>
+                    <span className="stationlist__acct mono">{info.station_account}</span>
+                    {info.station_account === currentStation ? (
+                      <span className="stationlist__here">Open now</span>
+                    ) : (
+                      <button
+                        className="btn btn--outline btn--small"
+                        disabled={launching}
+                        onClick={() => onOpenStation(info.station_account)}
+                      >
+                        Open
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <h3 className="side-title">What a launch costs</h3>
+            <table className="facts">
               <tbody>
                 <tr>
-                  <th scope="row">Station account storage</th>
-                  <td>6.000 NEAR — held by the station account for its contract code</td>
+                  <th scope="row">Station storage</th>
+                  <td>6 NEAR, held by the station account for its contract</td>
                 </tr>
                 <tr>
-                  <th scope="row">Opening operating funds</th>
-                  <td>10.000 Cr (0.010 NEAR) — the treasury you play with</td>
+                  <th scope="row">Opening treasury</th>
+                  <td>10 Cr (0.010 NEAR), the money you play with</td>
                 </tr>
                 <tr>
-                  <th scope="row">Visitor traffic escrow</th>
-                  <td>
-                    {formatCredits(TRAFFIC_ESCROW_YOCTO)} Cr — 12 prepaid visiting ships; unused escrow stays
-                    refundable to you
-                  </td>
+                  <th scope="row">Visiting ships</th>
+                  <td>{cr(TRAFFIC_ESCROW_YOCTO)} Cr prepaid for 12 ships; unused escrow stays refundable</td>
                 </tr>
                 <tr>
                   <th scope="row">Total</th>
-                  <td>{nearText(TOTAL_YOCTO)} NEAR + gas, in two wallet approvals</td>
+                  <td>
+                    {nearText(TOTAL_YOCTO)} NEAR plus gas, in two approvals
+                  </td>
                 </tr>
               </tbody>
             </table>
-
-            <div className="launch__mine">
-              <div className="overlay__price-label">YOUR STATIONS</div>
-              {walletAccount === null ? (
-                <div className="pane__note">Connect a wallet to see your stations.</div>
-              ) : myStations === undefined ? (
-                <div className="pane__note">Reading your stations from chain…</div>
-              ) : myStations.length === 0 ? (
-                <div className="pane__note">None yet — launch your first station.</div>
-              ) : (
-                <ul className="launch__list">
-                  {myStations.map((info) => (
-                    <li key={info.station_account}>
-                      <span className="launch__acct">{info.station_account}</span>
-                      {info.station_account === currentStation ? (
-                        <span className="launch__here">OPEN NOW</span>
-                      ) : (
-                        <button
-                          className="btn btn--small btn--quiet"
-                          disabled={launching}
-                          onClick={() => onOpenStation(info.station_account)}
-                        >
-                          Open
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
           </div>
 
-          <div className="overlay__purchase">
+          <div className="dialog__side">
             {walletAccount === null ? (
               <>
-                <div className="overlay__price-label">CONNECT TO LAUNCH</div>
+                <h3 className="side-title">Launch a station</h3>
+                <p className="side-note">Any NEAR testnet wallet works. Your account becomes the station’s captain.</p>
                 <button className="btn btn--primary btn--block" onClick={onConnectWallet}>
                   Connect wallet
                 </button>
-                <div className="pane__note">
-                  Use any NEAR testnet wallet. Your account becomes the station's captain (NFT owner).
-                </div>
               </>
             ) : (
               <>
-                <div className="overlay__price-label">STATION NAME</div>
+                <h3 className="side-title">Launch a station</h3>
+                <label className="field__label" htmlFor="station-name">
+                  Station name
+                </label>
                 <input
-                  aria-label="Station name"
-                  className="launch__name"
+                  id="station-name"
+                  className="input"
                   value={name}
                   maxLength={MAX_STATION_NAME}
                   disabled={launching}
                   spellCheck={false}
+                  autoComplete="off"
                   onChange={(e) => setName(e.target.value.toLowerCase())}
                 />
-                <div className="pane__cost" style={{ fontSize: 11.5 }}>
+                <p
+                  className={`side-note${problem || availability === 'taken' ? ' side-note--bad' : ''}`}
+                  aria-live="polite"
+                >
                   {problem ??
                     (availability === 'taken'
-                      ? `${stationAccountFor(name)} is taken — choose another name`
+                      ? 'That name is taken. Try another.'
                       : availability === 'unknown'
-                        ? 'Could not check this name — edit it to retry'
-                        : stationAccountFor(name))}
-                </div>
-                <div className="pane__note">
-                  Captain <span style={{ fontFamily: 'var(--font-mono)' }}>{walletAccount}</span>
-                  {' · '}balance{' '}
-                  {balanceYocto === undefined ? '…' : balanceYocto === null ? '—' : `${nearText(balanceYocto)} NEAR`}
-                </div>
+                        ? 'Could not check this name. Edit it to retry.'
+                        : availability === 'checking'
+                          ? 'Checking the name…'
+                          : <>Free: <span className="mono">{stationAccountFor(name)}</span></>)}
+                </p>
+                <p className="side-note">
+                  Wallet balance:{' '}
+                  {balanceYocto === undefined ? '…' : balanceYocto === null ? 'unknown' : `${nearText(balanceYocto)} NEAR`}
+                </p>
                 {shortfall ? (
-                  <div className="pane__error">
-                    <IconWarning size={14} />
-                    <span>
-                      You need about {nearText(TOTAL_YOCTO + GAS_HEADROOM_YOCTO)} testnet NEAR.{' '}
-                      <a href={FAUCET_URL} target="_blank" rel="noreferrer">
-                        Get free testnet NEAR
-                      </a>
-                      , then reopen this panel.
-                    </span>
-                  </div>
+                  <p className="side-note side-note--bad">
+                    You need about {nearText(TOTAL_YOCTO + GAS_HEADROOM_YOCTO)} testnet NEAR.{' '}
+                    <a href={FAUCET_URL} target="_blank" rel="noreferrer">
+                      Get free testnet NEAR
+                    </a>
+                    , then reopen this panel.
+                  </p>
                 ) : null}
                 <button
                   className={`btn btn--primary btn--block${launching ? ' is-busy' : ''}`}
@@ -245,14 +238,12 @@ export function LaunchStation({
                     ? 'Approve in your wallet…'
                     : step === 'waiting'
                       ? 'Bringing the station online…'
-                      : problem === null && availability === 'checking'
-                        ? 'Checking name…'
-                        : 'Launch station'}
+                      : 'Launch station'}
                 </button>
-                <div className="pane__note">
-                  1. <span style={{ fontFamily: 'var(--font-mono)' }}>create_station</span> on the factory
-                  creates a keyless station account owned by you. 2. Fund the 12 visiting ships, then play turn 1.
-                </div>
+                <p className="side-note">
+                  Approval 1 creates the station; you become its captain. Approval 2, on the station screen, prepays its
+                  12 visiting ships.
+                </p>
               </>
             )}
           </div>

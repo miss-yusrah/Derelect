@@ -1,7 +1,9 @@
-import { formatCredits } from '@derelict/game-model'
-import { HULL_CAPACITY } from '@derelict/game-model'
+import { CAMPAIGN_TURNS, HULL_CAPACITY } from '@derelict/game-model'
+import { ACTION_NAMES } from '../lib/actionDeck'
+import { cr, crDelta, near } from '../lib/format'
 import type { GameSnapshot, LedgerRow } from '../lib/state'
-import { actionLabel, GAMEPLAY_KINDS } from '../lib/state'
+import { ActionIcon, IconClose } from './icons'
+import { playedTurns } from './TurnTrack'
 import { useDialogFocus } from './primitives'
 
 export interface MissionResultProps {
@@ -9,134 +11,89 @@ export interface MissionResultProps {
   events: LedgerRow[]
   walletAccount: string | null
   onClose: () => void
+  onLaunch: () => void
 }
 
-export function MissionResult({
-  snapshot,
-  events,
-  walletAccount,
-  onClose,
-}: MissionResultProps) {
+/** The campaign's closing paper: verdict, score, and the six stamped turns. */
+export function MissionResult({ snapshot, events, walletAccount, onClose, onLaunch }: MissionResultProps) {
   const outcome = snapshot.outcome
   const panelRef = useDialogFocus<HTMLDivElement>(outcome.complete, onClose)
   if (!outcome.complete) return null
 
   const success = outcome.success
   const derived = [
-    ...(snapshot.hull < 1 ? ['Failed: hull destroyed'] : []),
-    ...(snapshot.served < 3 ? ['Failed: fewer than 3 ships served'] : []),
+    ...(snapshot.hull < 1 ? ['the hull was destroyed'] : []),
+    ...(snapshot.served < 3 ? ['fewer than 3 ships were served'] : []),
   ]
-  const reasonText = outcome.reason ?? (derived.length > 0 ? derived.join(' · ') : 'Campaign complete')
-
-  const score = formatCredits(snapshot.operatingYocto)
-
-  const history = turnTable(events)
+  const reasonText = (
+    outcome.reason ?? (derived.length > 0 ? `Lost: ${derived.join(' and ')}` : 'Six turns complete')
+  ).replace(/\.?\s*$/, '.')
+  const played = playedTurns(events)
 
   return (
-    <div className="result-scrim" role="dialog" aria-modal="true" aria-label="Mission result">
-      <div className="result" role="document" ref={panelRef} tabIndex={-1}>
-        <div className={`result__header ${success ? 'result__header--win' : 'result__header--fail'}`}>
-          {success ? 'SALVAGE SUCCESSFUL' : 'STATION RECLAIMED BY RUST'}
-        </div>
-        <div className="result__reason" role="status">
-          REASON: {reasonText}
-          <span style={{ color: 'var(--ink-3)' }}>
-            {' '}
-            — {snapshot.served} ships served · hull {snapshot.hull} / {HULL_CAPACITY} · captain {walletAccount ?? snapshot.owner} ·{' '}
-            chain ledger
-          </span>
-        </div>
+    <div className="scrim" onClick={onClose}>
+      <div
+        className="dialog result"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="result-title"
+        ref={panelRef}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button className="iconbtn dialog__close" onClick={onClose} aria-label="Close results">
+          <IconClose size={16} />
+        </button>
+        <span className={`result__stamp ${success ? 'result__stamp--won' : 'result__stamp--lost'}`}>
+          {success ? 'Salvage successful' : 'Station lost'}
+        </span>
+        <h2 className="result__score" id="result-title">
+          {cr(snapshot.operatingYocto)}
+          <span className="result__unit">Cr</span>
+          <span className="visually-hidden"> final treasury</span>
+        </h2>
+        <p className="result__reason">
+          Left in the treasury, and your score ({near(snapshot.operatingYocto)} testnet NEAR). {reasonText}{' '}
+          {snapshot.served} {snapshot.served === 1 ? 'ship' : 'ships'} served, hull {snapshot.hull}/{HULL_CAPACITY}.
+        </p>
 
-        <div className="result__scorelabel">FINAL OPERATING TREASURY (THE SCORE)</div>
-        <div className="result__score">
-          {score}
-          <span className="unit"> Cr</span>
-          <span style={{ fontSize: 16, color: 'var(--ink-3)', letterSpacing: '0.08em', marginLeft: 18 }}>
-            = {crToNear(snapshot.operatingYocto)} testnet NEAR
-          </span>
-        </div>
+        <ol className="result__turns" aria-label="Turn by turn">
+          {Array.from({ length: CAMPAIGN_TURNS }, (_, i) => {
+            const entry = played.get(i + 1)
+            return (
+              <li key={i} className={entry ? undefined : 'is-empty'}>
+                <span className="result__turn">T{i + 1}</span>
+                {entry ? (
+                  <>
+                    <ActionIcon kind={entry.kind} size={16} />
+                    <span className="result__action">
+                      {ACTION_NAMES[entry.kind].title}
+                      {entry.repaired ? <span className="result__aside"> · repair landed</span> : null}
+                    </span>
+                    <span
+                      className={`result__delta${entry.deltaYocto > 0n ? ' is-gain' : entry.deltaYocto < 0n ? ' is-cost' : ''}`}
+                    >
+                      {crDelta(entry.deltaYocto)} Cr
+                    </span>
+                  </>
+                ) : (
+                  <span className="result__action">No move recorded</span>
+                )}
+              </li>
+            )
+          })}
+        </ol>
 
-        <div className="result__table">
-          <h3>SIX-TURN ACTION HISTORY</h3>
-          <table className="history-table">
-            <thead>
-              <tr>
-                <th>TURN</th>
-                <th>ACTION</th>
-                <th>OPERATING Δ</th>
-                <th>KIND</th>
-                <th>LEDGER</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.rows.map((row, index) => (
-                <tr key={`${row.kind}-${index}`}>
-                  <td className="num">T{row.turn}</td>
-                  <td style={{ color: 'var(--ink)' }}>{row.text}</td>
-                  <td className={`delta ${row.deltaYocto > 0n ? 'pos' : row.deltaYocto < 0n ? 'neg' : ''}`}>
-                    {row.deltaYocto === 0n ? '±0.000' : formatCredits(row.deltaYocto)}
-                  </td>
-                  <td className="num">{row.kind}</td>
-                  <td className="num">#{row.sequence}</td>
-                </tr>
-              ))}
-              {history.rows.length === 0 ? <tr><td className="num" colSpan={5}>No actions were played.</td></tr> : null}
-            </tbody>
-          </table>
-          {history.missed.length > 0 ? (
-            <div style={{ fontSize: 11.5, color: 'var(--ink-3)', marginTop: 8 }}>
-              Operated turns pushed to sale liquidity: {history.missed.join(', ')}.
-            </div>
-          ) : null}
-          <h3>WHY THE SCORE IS THE TREASURY</h3>
-          <p style={{ fontSize: 12.5, color: 'var(--ink-2)', margin: 0 }}>
-            The operating bucket is real station money: docking fees collected
-            from uncashed visitor escrow, minus every refuel and repair reserve.
-            The reserve is protected — if the supplier never claims it never
-            enters the score, and a purchase price never funds operations.
-          </p>
-        </div>
 
-        <div className="result__actions">
-          <button className="btn" onClick={onClose}>
-            Back to bridge
+        <div className="dialog__actions">
+          <button className="btn btn--primary" onClick={onLaunch}>
+            {walletAccount ? 'Launch a new station' : 'Play your own run'}
+          </button>
+          <button className="btn btn--outline" onClick={onClose}>
+            Back to the station
           </button>
         </div>
       </div>
     </div>
   )
-}
-
-function crToNear(yoctoValue: bigint): string {
-  return (Number(yoctoValue) / 1e24).toFixed(3)
-}
-
-interface TurnRow {
-  turn: number
-  kind: string
-  text: string
-  deltaYocto: bigint
-  sequence: number
-}
-
-function turnTable(rows: LedgerRow[]): { rows: TurnRow[]; missed: number[] } {
-  const rowsByTurn = new Map<number, TurnRow>()
-  for (const row of rows) {
-    if (!GAMEPLAY_KINDS.has(row.kind) || row.kind === 'repairEffect') continue
-    if (rowsByTurn.has(row.turn)) continue
-    rowsByTurn.set(row.turn, {
-      turn: row.turn,
-      kind: row.kind,
-      text: actionLabel(row.kind),
-      deltaYocto: row.deltaYocto,
-      sequence: row.sequence,
-    })
-  }
-  const list = Array.from(rowsByTurn.values()).sort((a, b) => a.turn - b.turn)
-  const covered = new Set(list.map((row) => row.turn))
-  const missed: number[] = []
-  for (let turn = 1; turn <= 6; turn++) {
-    if (!covered.has(turn)) missed.push(turn)
-  }
-  return { rows: list, missed }
 }

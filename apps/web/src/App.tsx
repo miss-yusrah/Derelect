@@ -25,20 +25,20 @@ import {
   type StationInfo,
 } from './lib/factory'
 import { Header } from './components/Header'
-import { StatusRail } from './components/StatusRail'
+import { ResourceHud } from './components/ResourceHud'
 import { StationCanvas } from './components/StationCanvas'
-import { DecisionRail } from './components/DecisionRail'
-import { BottomActivity } from './components/BottomActivity'
+import { ActionDeck } from './components/ActionDeck'
+import { TurnTrack } from './components/TurnTrack'
 import { LedgerDrawer } from './components/LedgerDrawer'
 import { InspectBuy } from './components/InspectBuy'
 import { MissionResult } from './components/MissionResult'
 import { LaunchStation, type LaunchStep } from './components/LaunchStation'
-import { Welcome } from './components/Welcome'
+import { BootScreen, Welcome } from './components/Welcome'
 import { HowItWorks } from './components/HowItWorks'
 import { NO_FX, confirmedChanges, moduleForAction, type ModuleId, type StationFx } from './lib/stationFx'
 import { onBlockedPopup, type BlockedPopup } from './lib/popupGuard'
-import { Banner } from './components/primitives'
-import { IconClose } from './components/icons'
+import { Toast } from './components/primitives'
+import { useActionDeck } from './lib/actionDeck'
 
 type TxKind = 'act' | 'list' | 'unlist' | 'purchase' | 'claimRepair' | 'seed'
 
@@ -166,7 +166,8 @@ export function App(): JSX.Element {
   const [message, setMessage] = useState<{ text: string; tone: 'error' | 'info' } | null>(null)
   const [ledgerOpen, setLedgerOpen] = useState(false)
   const [inspectOpen, setInspectOpen] = useState(false)
-  const [resultDismissed, setResultDismissed] = useState(false)
+  // Results open by themselves only when the last turn confirms in this session.
+  const [resultDismissed, setResultDismissed] = useState(true)
 
   // Launch-your-own-station dialog.
   const [launchOpen, setLaunchOpen] = useState(false)
@@ -248,6 +249,7 @@ export function App(): JSX.Element {
         return
       }
       const changes = confirmedChanges(previous, view)
+      if (view.snapshot.complete && !previous.snapshot.complete) setResultDismissed(false)
       const key = Date.now()
       if (changes.newAfterSequence === null && changes.previousOwner === null) return
       setFx((current) => ({
@@ -277,8 +279,8 @@ export function App(): JSX.Element {
         if (announce) {
           setBanner({
             tone: 'ok',
-            text: 'Read back from chain.',
-            detail: `revision ${view.snapshot.revision} at block ${view.blockHeight}`,
+            text: 'Confirmed on chain.',
+            detail: `Station revision ${view.snapshot.revision} · block ${view.blockHeight.toLocaleString('en-US')}`,
           })
         }
         return view
@@ -306,7 +308,7 @@ export function App(): JSX.Element {
           stationRef.current = account
           setStationAccount(account)
           applyView(view, true)
-          setResultDismissed(false)
+          setResultDismissed(true)
           setInspectOpen(false)
           const url = new URL(window.location.href)
           url.searchParams.set('station', account)
@@ -432,8 +434,8 @@ export function App(): JSX.Element {
         if (!settled) {
           setBanner({
             tone: 'info',
-            text: 'Submitted — no read-back yet.',
-            detail: 'The revision has not moved; check the transaction in your wallet.',
+            text: 'Signed, but not confirmed yet.',
+            detail: 'The station has not changed after 90 seconds. Check the transaction in your wallet.',
           })
           return false
         }
@@ -491,7 +493,7 @@ export function App(): JSX.Element {
           assertCaptain(snapshot, accountId)
           return contract.listForSale(creditsToYocto(priceCredits))
         },
-        settledBanner: () => ({ tone: 'ok', text: `Listing confirmed at ${priceCredits} Cr.` }),
+        settledBanner: () => ({ tone: 'ok', text: `Listed for sale at ${priceCredits} Cr.` }),
       })
     },
     [runTx],
@@ -506,7 +508,7 @@ export function App(): JSX.Element {
         assertCaptain(snapshot, accountId)
         return contract.unlist()
       },
-      settledBanner: () => ({ tone: 'ok', text: 'Listing removed on chain.' }),
+      settledBanner: () => ({ tone: 'ok', text: 'Listing removed.' }),
     })
   }, [runTx])
 
@@ -524,7 +526,7 @@ export function App(): JSX.Element {
       settledBanner: ({ contract, accountId }) => ({
         tone: 'ok',
         text: 'Station purchased. You are the captain.',
-        detail: `${accountId} now commands ${contract.stationAccount}.`,
+        detail: `${contract.stationAccount} now answers to ${accountId}.`,
       }),
     }).then((settled) => {
       if (settled) setInspectOpen(false)
@@ -543,7 +545,7 @@ export function App(): JSX.Element {
       settledBanner: () => ({
         tone: 'ok',
         text: 'Repair fee claimed.',
-        detail: 'The protected reserve is paid out to the supplier; the ledger records the payout.',
+        detail: 'The reserve was paid to you; the ledger records the payout.',
       }),
     })
   }, [runTx])
@@ -565,7 +567,7 @@ export function App(): JSX.Element {
         settledBanner: () => ({
           tone: 'ok',
           text: 'Station ready — 12 visiting ships are queued.',
-          detail: 'Play turn 1 from the decision rail.',
+          detail: 'Pick a card and sign turn 1.',
         }),
       }),
     [runTx],
@@ -597,7 +599,7 @@ export function App(): JSX.Element {
         setBanner({
           tone: 'info',
           text: `${account} is online — you are its captain.`,
-          detail: 'Step 2: click Fund visitor traffic in the decision rail to queue the 12 visiting ships.',
+          detail: 'Step 2 of 2: fund the 12 visiting ships from the panel at the bottom right.',
         })
       } catch (error) {
         setMessage({ text: txErrorText(error), tone: 'error' })
@@ -669,7 +671,7 @@ export function App(): JSX.Element {
       setBanner({
         tone: 'ok',
         text: `Wallet connected: ${wallet.accountId}`,
-        detail: 'NEAR testnet — every action is signed by your wallet.',
+        detail: 'NEAR testnet — every move is signed by your wallet.',
       })
       // A linked station that belongs to someone else stays read-only.
       const view = await refreshChain(false)
@@ -681,7 +683,7 @@ export function App(): JSX.Element {
           detail:
             view.snapshot.listingYocto !== null
               ? `This station is commanded by ${view.snapshot.owner}. It is listed — buy it to take command.`
-              : `This station is commanded by ${view.snapshot.owner}. Open or launch your own from Launch station.`,
+              : `This station is commanded by ${view.snapshot.owner}. Open or launch your own from Stations.`,
         })
       }
     } catch (error) {
@@ -738,7 +740,18 @@ export function App(): JSX.Element {
     return counts
   }, [snapshot, offers])
 
+
   const isCaptain = snapshot !== null && walletAccount !== null && snapshot.owner === walletAccount
+
+  const canClaimRepair =
+    snapshot !== null && walletAccount !== null && snapshot.repairSupplier === walletAccount && !snapshot.repairPaid
+
+  // The hand of action cards: shared by the deck (select, sign) and the papers (forecast).
+  const deckContext = useMemo(
+    () => ({ standardWaiting: offerCounts.standard, heavyWaiting: offerCounts.heavy }),
+    [offerCounts],
+  )
+  const deck = useActionDeck(previewState, BigInt(chainState?.blockHeight ?? 0), deckContext)
 
   const connectionChip = useMemo(() => {
     if (connecting) {
@@ -814,7 +827,7 @@ export function App(): JSX.Element {
   const popupPrompt = blockedPopup ? (
     <div className="popup-prompt" role="alertdialog" aria-modal="true" aria-label="Open your wallet">
       <div className="popup-prompt__panel">
-        <div className="popup-prompt__title">OPEN YOUR WALLET</div>
+        <h2 className="popup-prompt__title">Open your wallet</h2>
         <p>
           Your browser blocked the wallet's approval window. Open it to review and approve the
           transaction.
@@ -855,103 +868,87 @@ export function App(): JSX.Element {
 
   if (!snapshot || !previewState) {
     return (
-      <div className="boot">
-        <div className="boot__panel">
-          <div className="boot__wordmark">DERELICT</div>
-          <div className="boot__status">
-            {chainError ? 'STATION READ FAILED' : 'READING STATION FROM TESTNET…'}
-          </div>
-          <div className="boot__station">{stationAccount}</div>
-          {chainError ? <div className="boot__error">{chainError}</div> : null}
-          <div className="boot__actions">
-            <button className="btn btn--quiet" onClick={() => void refreshChain(false)}>
-              Retry read
-            </button>
-            {chainError ? (
-              <button className="btn btn--quiet" onClick={closeStation}>
-                {walletAccount ? 'My stations' : 'Back'}
-              </button>
-            ) : null}
-          </div>
-          <div className="boot__note">NEAR testnet · no simulation · every action is signed</div>
-        </div>
-      </div>
+      <>
+        <BootScreen
+          stationAccount={stationAccount}
+          error={chainError}
+          walletAccount={walletAccount}
+          onRetry={() => void refreshChain(false)}
+          onBack={closeStation}
+        />
+        {launchDialog}
+        {guideDialog}
+        {popupPrompt}
+      </>
     )
   }
 
-  const stationName = snapshot.stationAccount.split('.')[0]?.toUpperCase() ?? 'STATION'
+  const openMarket = () => setInspectOpen(true)
 
   return (
-    <div className="app">
+    <div className="bridge">
       <Header
         stationAccount={snapshot.stationAccount}
-        stationName={stationName}
-        playedTurns={Math.min(Math.max(snapshot.turn - 1, 0), CAMPAIGN_TURNS)}
+        listed={snapshot.listingYocto !== null}
+        track={
+          <TurnTrack
+            rows={rows}
+            turn={snapshot.turn}
+            complete={snapshot.complete}
+            pending={txPending === 'act'}
+            viewerIsCaptain={isCaptain}
+            newAfterSequence={fx.newAfterSequence}
+            stampDelayMs={fx.ledgerDelayMs}
+          />
+        }
         connectionChip={connectionChip}
         walletAccount={walletAccount}
         connecting={connecting}
         onConnectWallet={() => void connectWallet()}
         onDisconnectWallet={() => void disconnectWallet()}
-        onOpenInspect={() => setInspectOpen(true)}
-        onOpenLaunch={openLaunch}
+        onOpenLedger={() => setLedgerOpen(true)}
+        onOpenMarket={openMarket}
+        onOpenStations={openLaunch}
         onOpenGuide={() => setGuideOpen(true)}
       />
 
-      <div className="shell">
-        <StatusRail snapshot={snapshot} ownerSwap={fx.ownerSwap} />
-
+      <main className="bridge__stage">
         <StationCanvas
           snapshot={snapshot}
           dockedShip={dockedShip}
           spots={offerCounts}
           fx={fx}
           transferLocked={chainState?.locked ?? false}
-          banner={
-            banner ? (
-              <Banner
-                tone={banner.tone}
-                text={banner.text}
-                detail={banner.detail}
-                onClose={() => setBanner(null)}
-              />
-            ) : null
-          }
         />
-
-        <DecisionRail
-          snapshot={snapshot}
-          previewState={previewState}
-          currentBlock={BigInt(chainState?.blockHeight ?? 0)}
-          walletAccount={walletAccount}
-          isCaptain={isCaptain}
-          needsTraffic={needsTraffic}
-          confirmBusy={txPending !== null}
-          onConfirm={confirmAction}
-          onClaimRepair={claimRepair}
-          onSeedTraffic={() => void seedTraffic()}
-          onConnectWallet={() => void connectWallet()}
-          onOpenInspect={() => setInspectOpen(true)}
-          onOpenLaunch={openLaunch}
-        />
-      </div>
-
-      {message ? (
-        <div style={{ padding: '10px 16px 0', background: 'var(--bg)' }}>
-          <div className={`alert${message.tone === 'error' ? ' alert--error' : ' alert--info'}`} role="alert">
-            <span>{message.text}</span>
-            <button className="iconbtn alert__close" onClick={() => setMessage(null)} aria-label="Dismiss message">
-              <IconClose size={13} />
-            </button>
+        <ResourceHud snapshot={snapshot} forecast={deck.forecast} ownerSwap={fx.ownerSwap} />
+        {banner || message ? (
+          <div className="toasts">
+            {message ? (
+              <Toast tone={message.tone} text={message.text} onClose={() => setMessage(null)} />
+            ) : null}
+            {banner ? (
+              <Toast tone={banner.tone} text={banner.text} detail={banner.detail} onClose={() => setBanner(null)} />
+            ) : null}
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </main>
 
-      <BottomActivity
-        events={rows}
-        currentTurn={snapshot.turn}
-        newAfterSequence={fx.newAfterSequence}
-        highlightDelayMs={fx.ledgerDelayMs}
-        onOpenLedger={() => setLedgerOpen(true)}
+      <ActionDeck
+        deck={deck}
+        snapshot={snapshot}
+        previewState={previewState}
+        walletAccount={walletAccount}
+        isCaptain={isCaptain}
+        needsTraffic={needsTraffic}
+        canClaimRepair={canClaimRepair}
+        txPending={txPending}
+        onPlay={confirmAction}
+        onClaimRepair={claimRepair}
+        onSeedTraffic={() => void seedTraffic()}
+        onConnectWallet={() => void connectWallet()}
+        onOpenMarket={openMarket}
+        onOpenStations={openLaunch}
+        onShowResult={() => setResultDismissed(false)}
       />
 
       <LedgerDrawer
@@ -959,6 +956,9 @@ export function App(): JSX.Element {
         onClose={() => setLedgerOpen(false)}
         rows={rows}
         stationAccount={snapshot.stationAccount}
+        revision={snapshot.revision}
+        epoch={snapshot.epoch}
+        blockHeight={chainState?.blockHeight ?? null}
       />
 
       <InspectBuy
@@ -985,6 +985,10 @@ export function App(): JSX.Element {
           events={rows}
           walletAccount={walletAccount}
           onClose={() => setResultDismissed(true)}
+          onLaunch={() => {
+            setResultDismissed(true)
+            openLaunch()
+          }}
         />
       ) : null}
     </div>

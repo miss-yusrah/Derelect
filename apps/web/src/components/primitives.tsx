@@ -1,26 +1,10 @@
-import { useEffect, useRef, type ReactNode } from 'react'
-import { formatCredits, formatSignedCredits } from '@derelict/game-model'
-import { IconClose, IconHazard } from './icons'
-
-/** Re-exported for menu-consistent money formats. */
-export function credits(yoctoValue: bigint): string {
-  return `${formatCredits(yoctoValue)}`
-}
-
-export function signedCredits(yoctoValue: bigint): string {
-  return formatSignedCredits(yoctoValue)
-}
-
-export function creditDeltaClass(yoctoValue: bigint): string {
-  return yoctoValue > 0n ? 'pos' : yoctoValue < 0n ? 'neg' : ''
-}
-
-/* ------------------------------------------------------------------ */
+import { useEffect, useRef } from 'react'
+import { IconCheck, IconClose, IconWarning } from './icons'
 
 /**
- * Dialog behavior shared by the ledger drawer and the inspect/buy overlay:
- * Escape closes, focus moves into the panel on open and back to whatever
- * launched it on close. Presentation-only; no logic changes.
+ * Dialog behavior shared by the ledger drawer and the overlays: Escape
+ * closes, focus moves into the panel on open and back to whatever launched
+ * it on close.
  */
 export function useDialogFocus<T extends HTMLElement = HTMLDivElement>(
   open: boolean,
@@ -49,104 +33,68 @@ export function useDialogFocus<T extends HTMLElement = HTMLDivElement>(
 
 /* ------------------------------------------------------------------ */
 
-export interface GaugeProps {
-  icon: ReactNode
-  label: string
-  value: string
-  cells: number
-  cellCount: number
-  flashIndex?: number | null
-  danger?: boolean
+export interface PipsProps {
+  value: number
+  max: number
+  /** Forecast change from the selected card: spent cells dash out, gained cells dash in. */
+  delta?: number
+  /** Cells that arrive after the next action (a commissioned repair). */
+  later?: number
+  tone?: 'normal' | 'low' | 'danger' | 'met'
+  /** Spent cells are damage (oxide) rather than spending (neutral). */
+  damage?: boolean
 }
 
-export function Gauge({ icon, label, value, cells, cellCount, flashIndex = null, danger }: GaugeProps) {
+/** A resource track: one cell per unit of capacity. */
+export function Pips({ value, max, delta = 0, later = 0, tone = 'normal', damage = false }: PipsProps) {
+  const spendFrom = delta < 0 ? Math.max(value + delta, 0) : value
+  const gainTo = delta > 0 ? Math.min(value + delta, max) : value
+  const laterTo = Math.min(gainTo + later, max)
   return (
-    <div
-      className={`gauge${danger ? ' gauge--danger' : ''}`}
-      role="img"
-      aria-label={`${label} ${value} of ${cellCount}`}
-    >
-      <div className="gauge__head">
-        {icon}
-        <span>{label}</span>
-        <span className={`gauge__value${danger ? ' state-red' : ''}`}>
-          <span>{value}</span>
-          <span style={{ color: 'var(--ink-3)', fontSize: '12px' }}> / {cellCount}</span>
-        </span>
-      </div>
-      <div className="gauge__bar">
-        {Array.from({ length: cellCount }, (_, i) => {
-          const on = i < cells
-          const flashing = flashIndex !== null && i === cells - flashIndex
-          const cls = [
-            'gauge__cell',
-            on ? (danger ? 'gauge__cell--on state-red' : 'gauge__cell--on') : '',
-            on && flashing ? 'gauge__cell--flash' : '',
-          ]
-            .filter(Boolean)
-            .join(' ')
-          return <span key={i} className={cls} />
-        })}
-      </div>
-    </div>
+    <span className={`pips pips--${tone}${damage ? ' pips--damage' : ''}`} aria-hidden="true">
+      {Array.from({ length: max }, (_, i) => {
+        let state = i < value ? 'on' : 'off'
+        if (i < value && i >= spendFrom) state = 'spend'
+        else if (i >= value && i < gainTo) state = 'gain'
+        else if (i >= gainTo && i < laterTo) state = 'later'
+        return <span key={i} className={`pip pip--${state}`} />
+      })}
+    </span>
   )
 }
 
 /* ------------------------------------------------------------------ */
 
-export interface StatRowProps {
-  icon?: ReactNode
-  label: string
-  amount: string
-  unit?: string
-  title?: string
-  /** Highlights the row as an active obligation (e.g. repair in flight). */
-  active?: boolean
-  /** Small right-aligned status line under the amount. */
-  hint?: string
-}
+export type ToastTone = 'error' | 'info' | 'ok' | 'neutral'
 
-export function StatRow({ icon, label, amount, unit, title, active = false, hint }: StatRowProps) {
-  return (
-    <div className={`statrow${active ? ' statrow--active' : ''}`} title={title}>
-      <span className="statrow__label">
-        {icon}
-        {label}
-      </span>
-      <span className="statrow__amount">
-        {amount}
-        {unit ? <span className="statrow__unit">{unit}</span> : null}
-        {hint ? <span className="statrow__hint">{hint}</span> : null}
-      </span>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ */
-
-export type BannerTone = 'error' | 'info' | 'ok' | 'neutral'
-
-export function Banner({
+/** A status message over the stage; errors are alerts, the rest are polite. */
+export function Toast({
   tone,
   text,
   detail,
   onClose,
 }: {
-  tone: BannerTone
+  tone: ToastTone
   text: string
   detail?: string
   onClose?: () => void
 }) {
-  const toneClass =
-    tone === 'error' ? 'canvas__banner--error' : tone === 'info' ? 'canvas__banner--info' : tone === 'ok' ? 'canvas__banner--ok' : ''
   return (
-    <div className={`canvas__banner ${toneClass}`} role={tone === 'error' ? 'alert' : 'status'}>
-      {tone !== 'neutral' ? <IconHazard size={15} className="banner__icon" /> : null}
-      <span className="banner__text">
-        <strong style={{ fontWeight: 500 }}>{text}</strong>
-        {detail ? <div style={{ color: 'var(--ink-3)', marginTop: 2 }}>{detail}</div> : null}
+    <div className={`toast toast--${tone}`} role={tone === 'error' ? 'alert' : 'status'}>
+      {tone === 'ok' ? (
+        <IconCheck size={16} className="toast__icon" />
+      ) : tone === 'neutral' ? null : (
+        <IconWarning size={16} className="toast__icon" />
+      )}
+      <span className="toast__text">
+        <strong>{text}</strong>
+        {detail ? <span className="toast__detail">{detail}</span> : null}
       </span>
-      {onClose ? <button className="iconbtn alert__close" onClick={onClose} aria-label="Dismiss message"><IconClose size={13} /></button> : null}
+      {onClose ? (
+        <button className="iconbtn toast__close" onClick={onClose} aria-label="Dismiss message">
+          <IconClose size={14} />
+        </button>
+      ) : null}
     </div>
   )
 }
