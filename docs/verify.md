@@ -22,7 +22,7 @@ near contract call-function as-read-only "$STATION" get_state json-args '{}' \
 near contract call-function as-read-only "$STATION" get_buckets json-args '{}' \
   network-config testnet now
 
-# the ledger the app's mission log shows
+# the entries the app's Ledger shows
 near contract call-function as-read-only "$STATION" get_ledger \
   json-args '{"from_index": "0", "limit": 50}' network-config testnet now
 

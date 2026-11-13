@@ -198,6 +198,56 @@ export function IconPending(props: IconProps) {
   )
 }
 
+/** Heavy freighter: a hull carrying stacked cargo. */
+export function IconFreighter(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M2.5 13.5h15l-1.6 2.6a1.5 1.5 0 0 1-1.3.7H5.4a1.5 1.5 0 0 1-1.3-.7l-1.6-2.6Z" />
+      <rect x="4.5" y="9" width="4.5" height="4.5" />
+      <rect x="9" y="9" width="4.5" height="4.5" />
+      <rect x="6.7" y="4.5" width="4.5" height="4.5" />
+    </svg>
+  )
+}
+
+export function IconUpgrade(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M10 15.5V5M5.5 9.5 10 5l4.5 4.5" />
+      <path d="M4 17.5h12" />
+    </svg>
+  )
+}
+
+export function IconHelp(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="10" cy="10" r="7.3" />
+      <path d="M7.9 7.8a2.2 2.2 0 1 1 3.1 2c-.6.3-1 .8-1 1.4v.6M10 14.2v.2" />
+    </svg>
+  )
+}
+
+/** Price tag: the station market (list, buy). */
+export function IconTag(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3 4.5v5.2l7.6 7.6a1.2 1.2 0 0 0 1.7 0l5-5a1.2 1.2 0 0 0 0-1.7L9.7 3H4.5A1.5 1.5 0 0 0 3 4.5Z" />
+      <circle cx="6.8" cy="6.8" r="1.2" />
+    </svg>
+  )
+}
+
+/** Orbit: your stations (open or launch one). */
+export function IconOrbit(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="10" cy="10" r="2.6" />
+      <ellipse cx="10" cy="10" rx="8" ry="3.6" transform="rotate(-24 10 10)" />
+    </svg>
+  )
+}
+
 export function IconBox(props: IconProps): ReactNode {
   return (
     <svg {...base(props)}>
@@ -205,4 +255,23 @@ export function IconBox(props: IconProps): ReactNode {
       <path d="M3.2 6.3 10 9.7l6.8-3.4M10 9.7v7.3" />
     </svg>
   )
+}
+
+/** The icon for each game action, shared by cards, the turn track and results. */
+export function ActionIcon({ kind, ...props }: IconProps & { kind: string }) {
+  switch (kind) {
+    case 'standardDocking':
+      return <IconShip {...props} />
+    case 'heavyDocking':
+      return <IconFreighter {...props} />
+    case 'refuel':
+      return <IconFuel {...props} />
+    case 'commissionRepair':
+    case 'repairEffect':
+      return <IconWrench {...props} />
+    case 'upgradeDock':
+      return <IconUpgrade {...props} />
+    default:
+      return <IconClock {...props} />
+  }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef } from 'react'
 import type { GameSnapshot } from '../lib/state'
 import type { ModuleId, StationFx } from '../lib/stationFx'
 import stationIllustration from '../assets/station-illustration.webp'
@@ -21,8 +21,6 @@ export interface StationCanvasProps {
   fx: StationFx
   /** An nft_transfer_call is waiting on its receiver. */
   transferLocked: boolean
-  /** Floating message over the canvas (banners from App). */
-  banner?: ReactNode
 }
 
 /* Overlay geometry is measured on the 900x688 concept illustration. The
@@ -33,7 +31,7 @@ const ART_Y = 5
 const ART_W = 896
 const ART_H = 679
 
-const DIM = '#8A938F'
+const DIM = '#8F9088'
 
 interface Spot {
   id: ModuleId
@@ -58,8 +56,8 @@ const SPOTS: Spot[] = [
     leader: [346, 96],
     target: [333, 219],
     state: (s) => {
-      if (s.complete && !s.outcome.success) return { word: 'OFFLINE', color: '#C86B59' }
-      return { word: 'ONLINE', color: '#A7C0AA' }
+      if (s.complete && !s.outcome.success) return { word: 'OFFLINE', color: '#EE6A6F' }
+      return { word: 'ONLINE', color: '#8FCB9C' }
     },
   },
   {
@@ -71,9 +69,9 @@ const SPOTS: Spot[] = [
     leader: [718, 170],
     target: [646, 247],
     state: (s) => {
-      if (s.hull <= 0) return { word: 'OFFLINE', color: '#C86B59' }
-      if (s.hull < 3) return { word: `DAMAGE ${3 - s.hull}`, color: '#C86B59' }
-      return { word: 'READY', color: '#A7C0AA' }
+      if (s.hull <= 0) return { word: 'OFFLINE', color: '#EE6A6F' }
+      if (s.hull < 3) return { word: `DAMAGE ${3 - s.hull}`, color: '#EE6A6F' }
+      return { word: 'READY', color: '#8FCB9C' }
     },
   },
   {
@@ -86,8 +84,8 @@ const SPOTS: Spot[] = [
     target: [545, 490],
     state: (s) => {
       if (s.repairPaid) return { word: 'SETTLED', color: DIM }
-      if (s.repairApplied) return { word: 'RESTORED', color: '#A7C0AA' }
-      if (s.repairSupplier) return { word: 'QUEUED', color: '#D9B96A' }
+      if (s.repairApplied) return { word: 'RESTORED', color: '#8FCB9C' }
+      if (s.repairSupplier) return { word: 'QUEUED', color: '#F0B65A' }
       return { word: 'STANDBY', color: DIM }
     },
   },
@@ -133,6 +131,21 @@ const STARS = (() => {
   }))
 })()
 
+/** Wider starfield for the open space around the art (no art mask needed). */
+const SKY = (() => {
+  let seed = 31
+  const next = () => {
+    seed = (seed * 16807) % 2147483647
+    return seed / 2147483647
+  }
+  return Array.from({ length: 220 }, () => ({
+    x: next() * 1600,
+    y: next() * 1000,
+    r: 0.4 + next() * 0.75,
+    o: 0.18 + next() * 0.45,
+  }))
+})()
+
 function DroneSprite() {
   return <image href={droneSprite} x={-DRONE.w / 2} y={-DRONE.h / 2} width={DRONE.w} height={DRONE.h} />
 }
@@ -172,7 +185,7 @@ function shorten(text: string, max = 46): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
-export function StationCanvas({ snapshot: s, dockedShip, fx, transferLocked, banner }: StationCanvasProps) {
+export function StationCanvas({ snapshot: s, dockedShip, fx, transferLocked }: StationCanvasProps) {
   const repairActive = s.repairSupplier !== null && !s.repairApplied && !s.repairPaid
   const words = Object.fromEntries(SPOTS.map((spot) => [spot.id, spot.state(s).word])) as Record<ModuleId, string>
   const changedWords = useChangedWords(s.stationAccount, words)
@@ -180,6 +193,11 @@ export function StationCanvas({ snapshot: s, dockedShip, fx, transferLocked, ban
 
   return (
     <div className={`station-canvas${transferLocked ? ' station-canvas--locked' : ''}`}>
+      <svg className="station-sky" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        {SKY.map((star, i) => (
+          <circle key={i} cx={star.x} cy={star.y} r={star.r} opacity={star.o} />
+        ))}
+      </svg>
       <figure className="station-canvas-artwrap">
         <div className="station-scene">
           <img
@@ -303,6 +321,8 @@ export function StationCanvas({ snapshot: s, dockedShip, fx, transferLocked, ban
             const [tx, ty] = spot.target
             const pending = fx.pendingModule === spot.id
             const failure = fx.failure && fx.failure.module === spot.id ? fx.failure : null
+            // The reactor is always online in play; its label appears only when it has news.
+            if (spot.id === 'reactor' && st.word === 'ONLINE' && !pending && !failure) return null
             const underlineEnd = ux + spot.label.length * 8.4 + st.word.length * 8.2 + 34
             // Status lines stay on canvas: right-side callouts end at the underline,
             // and callouts near the bottom edge put the line above the label.
@@ -349,7 +369,7 @@ export function StationCanvas({ snapshot: s, dockedShip, fx, transferLocked, ban
                     <g className="modspot-pending" aria-hidden="true">
                       <circle cx={tx} cy={ty} r="11" />
                       <text {...noteAnchor} y={noteY}>
-                      PENDING — AWAITING CHAIN
+                      SIGNED · AWAITING CHAIN
                     </text>
                     </g>
                   ) : null}
@@ -374,7 +394,7 @@ export function StationCanvas({ snapshot: s, dockedShip, fx, transferLocked, ban
 
       {transferLocked ? (
         <div className="station-canvas-tag station-canvas-tag--lock" role="status">
-          TRANSFER PENDING — waiting for the receiving contract; commands are paused
+          Transfer in progress — commands pause until the receiving contract answers
         </div>
       ) : null}
       {stationFailure ? (
@@ -384,12 +404,6 @@ export function StationCanvas({ snapshot: s, dockedShip, fx, transferLocked, ban
         </div>
       ) : null}
 
-      <div className="station-canvas-registries" aria-hidden="true">
-        <span className="registry-left">CHAIN VIEW // 1 CR = 10^21 YOCTO</span>
-        <span className="registry-right">STATION ART — DERELICT CONCEPT</span>
-      </div>
-
-      {banner && <div className="station-canvas-banner">{banner}</div>}
     </div>
   )
 }

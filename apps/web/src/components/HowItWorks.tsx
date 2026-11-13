@@ -23,20 +23,22 @@ export function HowItWorks({ open, onClose }: HowItWorksProps) {
   if (!open) return null
 
   return (
-    <div className="overlay-scrim" onClick={onClose}>
+    <div className="scrim" onClick={onClose}>
       <div
-        className="overlay guide"
+        className="dialog guide"
         role="dialog"
         aria-modal="true"
-        aria-label="How DERELICT works"
+        aria-labelledby="guide-title"
         ref={panelRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="overlay__head">
-          <span className="guide__title">HOW IT WORKS</span>
-          <button className="iconbtn" onClick={onClose} aria-label="Close guide" style={{ marginLeft: 'auto' }}>
-            <IconClose size={14} />
+        <div className="dialog__head">
+          <h2 className="dialog-title" id="guide-title">
+            How to play
+          </h2>
+          <button className="iconbtn" onClick={onClose} aria-label="Close guide">
+            <IconClose size={16} />
           </button>
         </div>
 
@@ -67,7 +69,7 @@ export function HowItWorks({ open, onClose }: HowItWorksProps) {
                 if unused). Ships can only dock when they have prepaid.
               </li>
               <li>
-                <strong>Play six turns</strong> from the decision rail on the right.
+                <strong>Play six turns</strong> with the cards at the bottom of the screen.
               </li>
             </ol>
           </section>
@@ -75,9 +77,10 @@ export function HowItWorks({ open, onClose }: HowItWorksProps) {
           <section className="guide__section">
             <h3>Each turn</h3>
             <p>
-              Pick one action, read its preview, then <strong>Confirm</strong> and approve it in your wallet. The
-              station updates when the chain confirms the move — until then it shows as pending. A rejected
-              action costs nothing and does not use a turn.
+              Pick a card. The station papers on the left show what it would change, with dashed cells for fuel or
+              hull it would spend or add. Then <strong>Sign</strong> the turn and approve it in your wallet. The
+              station updates when the chain confirms the move, and the turn is stamped on the track at the top.
+              A rejected move costs nothing and does not use a turn.
             </p>
             <table className="guide__table">
               <tbody>
@@ -113,18 +116,19 @@ export function HowItWorks({ open, onClose }: HowItWorksProps) {
             <h3>Reading the screen</h3>
             <ul>
               <li>
-                <strong>Left</strong> — fuel, hull, operating funds (your score), money held for a repair, and
-                who owns the station.
+                <strong>Top</strong> — the six-turn track. Each confirmed turn carries its stamp: the move and what it
+                did to the treasury. <strong>Ledger</strong> lists every entry the station contract recorded.
+              </li>
+              <li>
+                <strong>Left</strong> — the station papers: treasury (your score), fuel, hull, ships served, money
+                held for others, and the captain.
               </li>
               <li>
                 <strong>Centre</strong> — your station. The reactor, dock and repair bay labels show their live
                 state.
               </li>
               <li>
-                <strong>Right</strong> — the actions you can take this turn, with a preview of each.
-              </li>
-              <li>
-                <strong>Bottom</strong> — the mission log, read straight from the station's on-chain ledger.
+                <strong>Bottom</strong> — your hand of six moves and the panel where you sign one.
               </li>
             </ul>
           </section>
@@ -132,14 +136,14 @@ export function HowItWorks({ open, onClose }: HowItWorksProps) {
           <section className="guide__section">
             <h3>Selling and buying</h3>
             <p>
-              Use <strong>Inspect / List</strong> to put your station up for sale at your price, or to buy one
-              that is listed. The buyer takes command with everything the station carries; the price goes to
+              Open <strong>Market</strong> to put your station up for sale at your price, or to buy one that is
+              listed. <strong>Stations</strong> opens the ones you command or launches a new one. The buyer takes command with everything the station carries; the price goes to
               the seller, and a repair supplier is still paid by the station.
             </p>
           </section>
         </div>
 
-        <div className="guide__foot">
+        <div className="dialog__actions">
           <button className="btn btn--primary" onClick={onClose}>
             Got it
           </button>
